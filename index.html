@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Prithvi-OpenET-Tower · 30 m monthly ET</title>
+<meta name="robots" content="noindex" />
+
+<link rel="preconnect" href="https://unpkg.com" crossorigin />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600&family=Source+Serif+4:opsz,wght@8..60,500;8..60,600&display=swap" />
+<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5.24.1/dist/maplibre-gl.css" />
+<link rel="stylesheet" href="css/portal.css?v=20261115h" />
+</head>
+<body>
+
+<div id="boot" class="boot" role="status" aria-live="polite">
+  <div class="boot-mark" aria-hidden="true"></div>
+  <p class="boot-title">Prithvi-OpenET-Tower</p>
+  <p class="boot-sub" id="bootMsg">Loading the catalog…</p>
+</div>
+
+<header class="top">
+  <div class="brand">
+    <p class="eyebrow">HydroAI Lab · GIST</p>
+    <h1>Prithvi-OpenET-Tower <span class="h1-sub">30 m monthly evapotranspiration</span></h1>
+  </div>
+  <dl class="facts" id="facts" aria-label="Dataset at a glance">
+    <div><dt>Resolution</dt><dd>30 m</dd></div>
+    <div><dt>Time step</dt><dd>Monthly</dd></div>
+    <div><dt>Record</dt><dd id="factRecord">—</dd></div>
+    <div><dt>Available now</dt><dd>Korean Peninsula</dd></div>
+    <div><dt>Other regions</dt><dd>On request</dd></div>
+  </dl>
+</header>
+
+<nav class="tabs" role="tablist" aria-label="Sections">
+  <button role="tab" class="tab on" data-tab="explore" aria-selected="true">Explore</button>
+  <button role="tab" class="tab" data-tab="download" aria-selected="false">Download</button>
+  <button role="tab" class="tab" data-tab="code" aria-selected="false">Use in code</button>
+  <button role="tab" class="tab" data-tab="about" aria-selected="false">About the data</button>
+  <button role="tab" class="tab tab-cta" data-tab="request" aria-selected="false">Request a region</button>
+</nav>
+
+<main>
+
+<!-- ───────────────────────────── Explore ───────────────────────────── -->
+<section id="tab-explore" class="tabpane on" role="tabpanel">
+  <div class="explore">
+    <div class="mapcol">
+      <div class="layerbar" aria-label="What the map shows">
+        <div class="seg" id="modeSeg" role="group" aria-label="Layer">
+          <button data-mode="annual" class="on" title="Sum of the 2016–2024 monthly means">Annual mean</button>
+          <button data-mode="clim" title="Mean of each calendar month over 2016–2024">Seasonal cycle</button>
+          <button data-mode="month" title="One month of one year">Single month</button>
+        </div>
+        <div class="when" id="when"></div>
+      </div>
+
+      <div class="mapwrap">
+        <div id="map" aria-label="Map of monthly evapotranspiration"></div>
+
+        <div class="map-ui map-tl" id="coverCard">
+          <p class="mini-h">Coverage</p>
+          <p class="cov-row"><span class="sw sw-avail"></span><span><b>Available now</b> · Korean Peninsula</span></p>
+          <p class="cov-row"><span class="sw sw-demand"></span><span><b>Not yet</b> · grey land is produced on request</span></p>
+          <button class="primary small" id="btnRequestHere">Request a region</button>
+        </div>
+
+        <div class="map-ui map-tr">
+          <select id="jump" class="mbtn jump" aria-label="Go to a city" title="Regional view around a city"><option value="">Go to a city…</option></select>
+          <button class="mbtn" id="btnHome" title="Fit the Korean Peninsula">Peninsula</button>
+          <button class="mbtn" id="btnWorld" title="Zoom out to the whole world">World</button>
+          <label class="mbtn slider" title="Opacity of the ET layer">
+            <span>Opacity</span>
+            <input type="range" id="opacity" min="0" max="100" value="100" aria-label="Layer opacity" />
+          </label>
+        </div>
+
+        <div class="map-ui map-bl legend" id="legend" aria-label="Colour scale">
+          <div class="legend-head">
+            <span class="legend-title" id="lgTitle">ET</span>
+            <div class="seg seg-sm" id="scaleSeg" role="group" aria-label="Colour scale range">
+              <button data-scale="fixed" class="on" title="Same range for every month, so months can be compared">Fixed</button>
+              <button data-scale="auto" title="Stretch to this layer's 2nd–98th percentile">Stretch</button>
+            </div>
+          </div>
+          <canvas id="lgHist" width="240" height="34" aria-hidden="true"></canvas>
+          <div class="lg-bar" id="lgBar"></div>
+          <div class="lg-ticks" id="lgTicks"></div>
+          <p class="lg-note"><span class="sw sw-nodata"></span>No clear-sky observation that month</p>
+        </div>
+
+        <div class="map-ui map-br readout" id="readout" aria-live="off">
+          <span id="roRes">—</span>
+          <span id="roVal"></span>
+        </div>
+
+        <div class="steps" id="steps" aria-label="Resolution on screen">
+          <span data-step="0">Overview</span><span data-step="1">Regional</span><span data-step="2">Native 30 m</span>
+        </div>
+      </div>
+      <p class="hint" id="hint">Click anywhere on the peninsula: the map zooms in two steps, from the coarse overview to a regional view (about 120 m per pixel) and then to the native 30 m, and the panel on the right shows the monthly series at that pixel.</p>
+    </div>
+
+    <aside class="side">
+      <section class="card" id="cardLayer">
+        <p class="mini-h">On the map</p>
+        <h2 id="lyTitle">—</h2>
+        <p class="sub" id="lySub"></p>
+        <div class="tiles">
+          <div class="tile"><p class="tile-l" id="lyMeanL">Peninsula mean</p><p class="tile-v"><span id="lyMean">—</span><small id="lyUnit"></small></p></div>
+          <div class="tile">
+            <p class="tile-l">Land with a clear observation</p>
+            <p class="tile-v"><span id="lyCover">—</span><small>%</small></p>
+            <div class="meter" aria-hidden="true"><i id="lyCoverBar"></i></div>
+          </div>
+        </div>
+        <p class="flag" id="lyFlag" hidden></p>
+      </section>
+
+      <section class="card" id="cardSeries">
+        <div class="card-head">
+          <div>
+            <p class="mini-h" id="srKicker">Seasonal cycle</p>
+            <h2 id="srTitle">Peninsula mean</h2>
+          </div>
+          <button class="ghost" id="srReset" hidden>← Peninsula mean</button>
+        </div>
+        <p class="sub" id="srSub"></p>
+        <figure class="chart" id="chart"></figure>
+        <div class="chart-actions">
+          <button class="ghost" id="srTableBtn" aria-expanded="false">Show table</button>
+          <button class="ghost" id="srCsv">Download CSV</button>
+        </div>
+        <div class="tablewrap" id="srTable" hidden></div>
+        <div class="record" id="recordBox" hidden>
+          <p class="mini-h">Full record at this pixel</p>
+          <p class="sub" id="rcSub"></p>
+          <figure class="chart" id="chartRecord"></figure>
+          <div class="chart-actions">
+            <button class="ghost" id="rcTableBtn" aria-expanded="false">Show table</button>
+            <button class="ghost" id="rcCsv">Download CSV</button>
+          </div>
+          <div class="tablewrap tall" id="rcTable" hidden></div>
+        </div>
+      </section>
+
+      <section class="card" id="cardRecord">
+        <p class="mini-h">The record</p>
+        <h2>Month by month</h2>
+        <p class="sub" id="calSub"></p>
+        <div class="cal" id="cal" role="grid" aria-label="Months with data"></div>
+        <div class="cal-legend" id="calLegend"></div>
+      </section>
+    </aside>
+  </div>
+</section>
+
+<!-- ───────────────────────────── Download ───────────────────────────── -->
+<section id="tab-download" class="tabpane" role="tabpanel" hidden>
+  <div class="prose-wide">
+    <h2 class="pane-h">Download</h2>
+    <p class="lead">One Cloud-Optimized GeoTIFF per month. Each file holds the whole peninsula at 30 m and can be read in part over HTTP, so you rarely need the full archive.</p>
+    <div class="notice" id="dlNotice"></div>
+    <div class="dl-tools">
+      <label>Year <select id="dlYear"></select></label>
+      <button class="ghost" id="dlCopy">Copy file list</button>
+      <button class="ghost" id="dlSums">Download checksums (SHA-256)</button>
+      <span class="dl-total" id="dlTotal"></span>
+    </div>
+    <div class="tablewrap">
+      <table class="grid" id="dlTable">
+        <thead><tr><th>Month</th><th>File</th><th class="num">Size</th><th>Period</th><th>Sensors</th><th>Browse tiles</th><th>SHA-256</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <h3>What is in a file</h3>
+    <table class="grid spec">
+      <tbody>
+        <tr><th>Format</th><td>Cloud-Optimized GeoTIFF, ZSTD compression, 512-px blocks, 7 overview levels</td></tr>
+        <tr><th>Grid</th><td>EPSG:5179 (Korea 2000 / Unified CS), 30 m, 22,403 × 36,677 pixels</td></tr>
+        <tr><th>Band 1</th><td>ET, mm/month × 10 (divide by 10). Mean of nine models trained on different flux-tower folds.</td></tr>
+        <tr><th>Band 2</th><td>Standard deviation among the nine models, mm/month × 10. It shows where the models disagree; it is not a total error.</td></tr>
+        <tr><th>No data</th><td>65535 — the pixel had no clear-sky observation that month (or is not land)</td></tr>
+        <tr><th>Tags</th><td><code>period_flag</code> (training period or extrapolated), <code>sensors</code>, model and checkpoint identifiers</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ───────────────────────────── Code ───────────────────────────── -->
+<section id="tab-code" class="tabpane" role="tabpanel" hidden>
+  <div class="prose-wide">
+    <h2 class="pane-h">Use in code</h2>
+    <p class="lead">The files are Cloud-Optimized GeoTIFFs: open one by URL or path and read only the window you need.</p>
+
+    <h3>Python — read an area of interest</h3>
+    <pre class="code" id="codePy"></pre>
+    <button class="ghost copy" data-copy="codePy">Copy</button>
+
+    <h3>Python — a monthly series at one point</h3>
+    <pre class="code" id="codeTs"></pre>
+    <button class="ghost copy" data-copy="codeTs">Copy</button>
+
+    <h3>QGIS</h3>
+    <p>Layer → Add Layer → Add Raster Layer, source type <i>Protocol: HTTP(S)</i> (or <i>File</i> on the lab storage), then paste the file address. QGIS reads the overviews first, so the whole peninsula opens quickly. Set the band rendering to <i>Singleband pseudocolor</i> on band 1 and remember the values are mm/month × 10.</p>
+
+    <h3>Browse tiles</h3>
+    <p>The map on this site does not use pictures of the data. It reads 8-bit numeric tiles (one PMTiles file per month, Web Mercator, zoom 3–12) in which each pixel stores ET in whole mm/month, and colours them in the browser. They are meant for looking, not for analysis: they are resampled and rounded. Use the GeoTIFFs for any calculation.</p>
+  </div>
+</section>
+
+<!-- ───────────────────────────── About ───────────────────────────── -->
+<section id="tab-about" class="tabpane" role="tabpanel" hidden>
+ <div class="about">
+  <article class="prose">
+    <h2 class="pane-h">About the data</h2>
+    <p class="lead">Monthly evapotranspiration (ET) at 30 m for the Korean Peninsula, <span id="abRecord">April 2013 to August 2026</span>, estimated with Prithvi-OpenET-Tower.</p>
+
+    <h3 id="ab-model">The model</h3>
+    <p>Prithvi-OpenET builds on Prithvi-EO-2.0, a geospatial foundation model pretrained on Harmonized Landsat and Sentinel-2 (HLS) imagery. It was first trained over the conterminous United States to reproduce the five ensemble members of OpenET from HLS reflectance, and then adapted to observations from 283 flux-tower sites around the world. The adapted model is Prithvi-OpenET-Tower, and it made these maps.</p>
+    <p>The model predicts the ratio of ET to reference ET. Multiplying that ratio by FAO-56 reference ET from MERRA-2 gives ET in mm per month. It uses no thermal imagery.</p>
+
+    <h3 id="ab-inputs">Inputs</h3>
+    <table class="grid spec">
+      <tbody>
+        <tr><th>Surface reflectance</th><td>HLS v2.0 Landsat (L30) and Sentinel-2 (S30), six bands, one monthly composite per pixel from clear observations</td></tr>
+        <tr><th>Weather</th><td>Reference ET and vapour-pressure deficit from MERRA-2; clear-sky shortwave radiation computed on Copernicus GLO-30 terrain</td></tr>
+        <tr><th>Terrain and soil</th><td>Elevation (Copernicus GLO-30), topographic wetness index (MERIT Hydro), available water capacity (SoilGrids 2.0), aridity index (CGIAR)</td></tr>
+      </tbody>
+    </table>
+    <p>Every input is available worldwide, which is why the same model can be run for other regions on request.</p>
+
+    <h3 id="ab-made">How these maps were made</h3>
+    <ul>
+      <li>Each map is the mean of nine models trained on different groups of flux towers. Their spread is kept as a second band.</li>
+      <li>The model ran in overlapping 224-pixel windows that were blended together, and a correction removed the steps that MERRA-2 grid cells would otherwise leave in the map.</li>
+      <li>A pixel with no clear-sky observation in a month is left empty. Nothing is gap-filled.</li>
+      <li>South and North Korea were processed separately and merged on one 30 m grid.</li>
+    </ul>
+
+    <h3 id="ab-read">Read this before you use the numbers</h3>
+    <ul>
+      <li><b>Training period.</b> The model was trained on 2016–2024. Months before 2016 and after 2024 are extrapolations in time and are marked as such on this site and in each file.</li>
+      <li><b>Gaps.</b> Empty pixels are common in the summer monsoon and in 2013–2015, when only Landsat was available. A regional mean covers only the pixels that were observed, so read it together with the share of land observed.</li>
+      <li><b>30 m is the grid, not the accuracy.</b> Accuracy at single pixels and single fields has not been verified, and many Korean fields are smaller than a pixel.</li>
+      <li><b>North Korea.</b> There are no flux towers to check the estimates against.</li>
+      <li><b>Model spread is not total uncertainty.</b> Band 2 shows only how much the nine models disagree.</li>
+      <li><b>Missing month.</b> <span id="abMissing">September 2025</span> was not produced because an input was unavailable.</li>
+    </ul>
+
+    <h3 id="ab-demand">Other regions, on request</h3>
+    <p id="abDemand"></p>
+
+    <h3 id="ab-cite">Citation</h3>
+    <p class="cite">Choi, E., Kim, S., and Kim, H. Prithvi-OpenET: Geospatial Foundation Model-Based 30 m Monthly Evapotranspiration Estimation beyond the Conterminous United States with Landsat and Sentinel-2 Imagery. Manuscript in preparation.</p>
+
+    <h3 id="ab-credits">Sources and credits</h3>
+    <p>HLS v2.0 (NASA), MERRA-2 (NASA GMAO), OpenET, Prithvi-EO-2.0 (IBM and NASA), FLUXNET, Copernicus GLO-30, MERIT Hydro, SoilGrids 2.0, CGIAR Global Aridity Index. The land mask is derived from OpenStreetMap, © OpenStreetMap contributors (ODbL). Background imagery © Esri and its data providers.</p>
+    <p>Contact: HydroAI Lab, Gwangju Institute of Science and Technology — <a id="abMail"></a></p>
+  </article>
+  <aside class="about-side">
+    <div class="card">
+      <p class="mini-h">At a glance</p>
+      <dl class="glance">
+        <div><dt>Variable</dt><dd>Evapotranspiration, mm per month</dd></div>
+        <div><dt>Grid</dt><dd>30 m, monthly</dd></div>
+        <div><dt>Record</dt><dd id="glRecord">April 2013 – August 2026</dd></div>
+        <div><dt>Coverage</dt><dd>Korean Peninsula; other regions on request</dd></div>
+        <div><dt>Model</dt><dd>Prithvi-OpenET-Tower, mean of nine models</dd></div>
+        <div><dt>Trained on</dt><dd>2016–2024; other months are extrapolated</dd></div>
+        <div><dt>Files</dt><dd>Cloud-Optimized GeoTIFF, one per month</dd></div>
+      </dl>
+    </div>
+    <div class="card">
+      <p class="mini-h">On this page</p>
+      <nav class="toc" aria-label="Sections of this page">
+        <a href="#ab-model">The model</a>
+        <a href="#ab-inputs">Inputs</a>
+        <a href="#ab-made">How these maps were made</a>
+        <a href="#ab-read">Read this before you use the numbers</a>
+        <a href="#ab-demand">Other regions, on request</a>
+        <a href="#ab-cite">Citation</a>
+        <a href="#ab-credits">Sources and credits</a>
+      </nav>
+    </div>
+  </aside>
+ </div>
+</section>
+
+<!-- ───────────────────────────── Request ───────────────────────────── -->
+<section id="tab-request" class="tabpane" role="tabpanel" hidden>
+  <div class="prose-wide req">
+    <div class="req-intro">
+      <h2 class="pane-h">Request a region</h2>
+      <p class="lead" id="rqLead"></p>
+      <ul class="req-points">
+        <li>Anywhere on land that HLS covers — in practice all land except Antarctica.</li>
+        <li id="rqWindow"></li>
+        <li>Months outside 2016–2024 are extrapolations beyond the model's training period.</li>
+        <li>Outside the regions where flux towers exist the estimates are less well checked. Africa and South America have few towers.</li>
+      </ul>
+    </div>
+
+    <form id="rqForm" class="form" novalidate>
+      <fieldset>
+        <legend>Who is asking</legend>
+        <div class="row2">
+          <label>Name <input name="name" autocomplete="name" required /></label>
+          <label>Affiliation <input name="org" autocomplete="organization" required /></label>
+        </div>
+        <label>Email <input name="email" type="email" autocomplete="email" required /></label>
+      </fieldset>
+
+      <fieldset>
+        <legend>Where</legend>
+        <label>Region name <input name="region" placeholder="e.g. Mekong Delta, Vietnam" required /></label>
+        <div class="row4">
+          <label>West <input name="w" type="number" step="0.01" min="-180" max="180" required /></label>
+          <label>South <input name="s" type="number" step="0.01" min="-90" max="90" required /></label>
+          <label>East <input name="e" type="number" step="0.01" min="-180" max="180" required /></label>
+          <label>North <input name="n" type="number" step="0.01" min="-90" max="90" required /></label>
+        </div>
+        <p class="form-hint" id="rqArea">Longitude and latitude in degrees. Tip: click anywhere outside Korea on the map, then “Request this area”.</p>
+      </fieldset>
+
+      <fieldset>
+        <legend>When</legend>
+        <div class="row2">
+          <label>First month <input name="from" type="month" placeholder="YYYY-MM" required /></label>
+          <label>Last month <input name="to" type="month" placeholder="YYYY-MM" required /></label>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>What for</legend>
+        <label>Intended use <textarea name="use" rows="4" maxlength="600" placeholder="A sentence or two is enough." required></textarea></label>
+      </fieldset>
+
+      <!-- left empty by people; programs that fill every field give themselves away -->
+      <div class="hp" aria-hidden="true"><label>Website <input name="website" tabindex="-1" autocomplete="off" /></label></div>
+      <p class="form-error" id="rqError" role="alert" hidden></p>
+      <p class="form-done" id="rqDone" role="status" hidden></p>
+      <div class="form-actions">
+        <button type="submit" class="primary" id="rqSend">Open the email draft</button>
+        <button type="button" class="ghost" id="rqMail" hidden>Open an email draft instead</button>
+        <button type="button" class="ghost" id="rqCopy">Copy the request text</button>
+      </div>
+      <p class="form-hint" id="rqHow"></p>
+    </form>
+  </div>
+</section>
+
+</main>
+
+<footer class="foot" id="foot">
+  <span>HydroAI Lab · Gwangju Institute of Science and Technology</span>
+  <span id="footVer"></span>
+</footer>
+
+<div class="tip" id="tip" role="tooltip" hidden></div>
+
+<script src="https://unpkg.com/maplibre-gl@5.24.1/dist/maplibre-gl.js"></script>
+<script src="https://unpkg.com/pmtiles@4.5.0/dist/pmtiles.js"></script>
+<script src="js/config.js?v=20261115h"></script>
+<script src="js/app.js?v=20261115h"></script>
+</body>
+</html>

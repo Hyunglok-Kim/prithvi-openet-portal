@@ -1,0 +1,58 @@
+# Prithvi-OpenET-Tower data portal
+
+A web portal for 30 m monthly evapotranspiration (ET) maps made with Prithvi-OpenET-Tower, a
+geospatial foundation model (Prithvi-EO-2.0) trained to reproduce OpenET from Harmonized Landsat and
+Sentinel-2 reflectance and adapted to flux-tower observations. HydroAI Lab, Gwangju Institute of
+Science and Technology.
+
+**Status: prototype.** The maps and tiles are not published yet and this site is not served
+publicly. The model code is at
+[Prithvi_OpenET_code_public](https://github.com/Hyunglok-Kim/Prithvi_OpenET_code_public).
+
+## What it does
+
+- Opens on the whole world: land is grey except where ready-made maps exist (the Korean Peninsula,
+  April 2013 onward).
+- Click to zoom from a regional overview (about 2 km per pixel) to 120 m and then the native 30 m.
+- Three layers: mean annual ET, the mean seasonal cycle, and any single month. Months outside the
+  model's 2016–2024 training period are flagged.
+- Click a pixel for its monthly series, its full record, and a CSV.
+- Lists the monthly GeoTIFFs with checksums, and shows how to read them in Python and QGIS.
+- Takes requests for other regions: any land area with HLS observations.
+
+## How it works
+
+The site is static: one HTML page, one script, no build step. The map does not show pictures of the
+data. Each month is one [PMTiles](https://docs.protomaps.com/pmtiles/) file of 8-bit numeric tiles
+(pixel value × step = mm of ET), read over HTTP Range requests and coloured in the browser with
+[MapLibre GL JS](https://maplibre.org/). That keeps the legend adjustable and the cursor readout
+exact, and it needs nothing but a file host.
+
+```
+index.html, css/, js/     the portal
+assets/                   land outline (Natural Earth, public domain)
+pipeline/                 GeoTIFF → numeric tile pyramid + catalog (Python, GDAL)
+worker/                   request-form backend (Cloudflare Worker)
+tests/                    headless-browser smoke test (Playwright)
+```
+
+`CLAUDE.md` has the details: the tile contract, how to build tiles, how to run and test, how to
+deploy the request backend, and the rules the design must keep.
+
+## Try it locally
+
+You need a folder of tiles built with `pipeline/` (a `catalog.json` plus the `.pmtiles` files).
+
+```bash
+pip install uvicorn starlette
+python dev_server.py --data /path/to/tiles      # http://127.0.0.1:8791/
+```
+
+## Credits
+
+Map rendering: MapLibre GL JS. Tile archive format: PMTiles (Protomaps). Land outline: Natural
+Earth. Background imagery: Esri World Imagery. Inputs to the maps: HLS v2.0 (NASA), MERRA-2 (NASA
+GMAO), OpenET, Prithvi-EO-2.0 (IBM and NASA), FLUXNET, Copernicus GLO-30, MERIT Hydro, SoilGrids
+2.0, CGIAR Global Aridity Index.
+
+Contact: HydroAI Lab — hyunglokkim@gist.ac.kr

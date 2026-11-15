@@ -1,0 +1,10 @@
+{
+  "name": "prithvi-openet-requests",
+  "private": true,
+  "type": "module",
+  "description": "On-demand request receiver for the Prithvi-OpenET-Tower data portal (Cloudflare Worker)",
+  "scripts": {
+    "test": "node --test test.mjs",
+    "deploy": "wrangler deploy"
+  }
+}

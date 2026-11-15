@@ -1,0 +1,13 @@
+# tiles and other data never go into the repository
+/data/
+*.pmtiles
+*.tif
+
+# local settings and tooling
+pipeline/local.env
+worker/.dev.vars
+worker/.wrangler/
+node_modules/
+__pycache__/
+*.pyc
+.DS_Store

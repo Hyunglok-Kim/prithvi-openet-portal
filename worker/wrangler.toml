@@ -1,0 +1,34 @@
+# Prithvi-OpenET-Tower portal — on-demand request receiver.
+# Deploy:  cd worker && npx wrangler login && npx wrangler deploy
+# Before the first deploy, in the Cloudflare dashboard (Compute > Email Service):
+#   1. Email Routing > Destination addresses: add the MAIL_TO address and click the link in the
+#      verification mail. Only verified addresses can receive mail from a Worker.
+#   2. Onboard the sending domain (Email Routing, or Email Sending on a paid plan) so MAIL_FROM is accepted.
+# Then put the URL that `wrangler deploy` prints into ../js/config.js (requestEndpoint).
+
+name = "prithvi-openet-requests"
+main = "src/index.js"
+compatibility_date = "2026-10-01"
+
+[vars]
+MAIL_TO = "hyunglokkim@gist.ac.kr"
+MAIL_FROM = "requests@hydroai.net"
+# Pages that may send the form from a browser. Origins that should stay out of this repository
+# (an intranet preview) go into the secret EXTRA_ORIGINS:  npx wrangler secret put EXTRA_ORIGINS
+ALLOWED_ORIGINS = "https://hyunglok-kim.github.io,https://hydroai.net,https://www.hydroai.net"
+FIRST_MONTH = "2013-04"      # HLS begins in April 2013
+LAG_MONTHS = "3"             # inputs arrive about three months late
+
+# The binding can send to this one address and nowhere else.
+[[send_email]]
+name = "EMAIL"
+destination_address = "hyunglokkim@gist.ac.kr"
+
+# A brake on abuse: five submissions a minute from one network address.
+[[ratelimits]]
+name = "LIMITER"
+namespace_id = "2611"
+
+  [ratelimits.simple]
+  limit = 5
+  period = 60
