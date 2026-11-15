@@ -21,6 +21,7 @@ const Q = new URLSearchParams(location.search);
 }
 const EMBED = Q.get("embed") === "1";
 if (EMBED) document.documentElement.classList.add("embed");
+if (Q.get("hidefooter") === "1") document.body.classList.add("hide-footer");   // the page that embeds the portal draws its own logo strip
 const DATA = new URL(CFG.dataBase, location.href).href;
 const REDUCED = matchMedia("(prefers-reduced-motion: reduce)").matches;
 
@@ -131,9 +132,12 @@ function currentRange(ly) {
 /* ───────────────────────────── numeric tiles ───────────────────────────── */
 const archives = new Map(), dnCache = new Map(), pending = new Map();
 const DN_MAX = 900;
+/* A layer's file is an address relative to the catalog. A copy spread over several sites writes
+   "../other-site/monthly/x.pmtiles" there, so join it properly rather than gluing strings. */
+const fileURL = (rel) => new URL(rel, DATA).href;
 function archive(id) {
   let a = archives.get(id);
-  if (!a) { a = new pmtiles.PMTiles(new pmtiles.FetchSource(DATA + L.get(id).file)); archives.set(id, a); }
+  if (!a) { a = new pmtiles.PMTiles(new pmtiles.FetchSource(fileURL(L.get(id).file))); archives.set(id, a); }
   return a;
 }
 /* Tiles carry numbers, so they are decoded byte for byte here and not through a canvas: Safari
@@ -304,6 +308,14 @@ function onLand(lng, lat) {
 }
 /* MapLibre rounds the zoom for raster sources and 256-px tiles sit one level ahead of the map zoom. */
 const tileZoom = () => clamp(Math.round(map.getZoom() + 1), 0, CAT.zoom.max);
+/* A copy of the tiles may stop short of the native grid: a public preview on a host with size limits
+   has zoom.max below zoom.native in its catalog. Everything that names a resolution asks here, so the
+   page never promises 30 m where the tiles on hand are coarser. */
+const fullRes = () => CAT.zoom.max >= (CAT.zoom.native || CAT.zoom.max);
+const groundRes = (z, lat) => 40075016.686 * Math.cos(lat * Math.PI / 180) / (TILE * 2 ** z);
+const finestRes = () => fmtRes(groundRes(CAT.zoom.max, (CAT.bounds[1] + CAT.bounds[3]) / 2));
+const cellName = () => (fullRes() ? "30 m pixel" : `${finestRes()} cell`);
+const zRegional = () => Math.min(9.2, CAT.zoom.max - 0.3);      // map zoom of the first click-in: tile zoom 10, about 120 m
 
 function initMap() {
   buildLUT();
@@ -327,13 +339,13 @@ function initMap() {
         { id: "et", type: "raster", source: "et", paint: { "raster-opacity": 1, "raster-fade-duration": 150 } },
       ],
     },
-    center: [127.6, 30], zoom: GLOBE_ZOOM, minZoom: 1.2, maxZoom: 14.5,
+    center: [127.6, 30], zoom: GLOBE_ZOOM, minZoom: 1.2, maxZoom: CAT.zoom.max + 2.5,
     attributionControl: { compact: true }, dragRotate: false, pitchWithRotate: false, touchPitch: false,
   });
   map.touchZoomRotate.disableRotation();
   map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
   map.addControl(new maplibregl.ScaleControl({ unit: "metric", maxWidth: 110 }), "bottom-left");
-  window.__portal = { map, state, getDN, L, dnCache, exact: () => exactDecode };          // handle for tests and debugging
+  window.__portal = { map, state, getDN, L, dnCache, exact: () => exactDecode, zoom: CAT.zoom };          // handle for tests and debugging
 
   map.on("error", (e) => console.warn("[map]", e && e.error ? e.error.message : e));
   map.on("load", () => {
@@ -387,10 +399,10 @@ function onZoom() {
   if (pulse) pulse.getElement().style.display = z < 4.2 ? "" : "none";
   for (const m of cityMarkers) m.getElement().firstChild.style.opacity = z >= 5.6 && z <= 10.6 ? "1" : "0";
   $("#coverCard").classList.toggle("dim", z > 7.2);
-  const res = 40075016.686 * Math.cos(map.getCenter().lat * Math.PI / 180) / (TILE * 2 ** zc);
+  const res = groundRes(zc, map.getCenter().lat);
   const step = zc <= 8 ? 0 : zc < CAT.zoom.max ? 1 : 2;
   document.querySelectorAll("#steps span").forEach((s) => s.classList.toggle("on", +s.dataset.step === step));
-  $("#roRes").textContent = z < 2.6 ? "Zoom in to see the data" : `${fmtRes(res)} per pixel${zc === CAT.zoom.max ? " (native)" : ""}`;
+  $("#roRes").textContent = z < 2.6 ? "Zoom in to see the data" : `${fmtRes(res)} per pixel${zc === CAT.zoom.max ? (fullRes() ? " (native)" : " (finest here)") : ""}`;
   if (map.getLayer("et")) map.setPaintProperty("et", "raster-resampling", z > CAT.zoom.max - 0.4 ? "nearest" : "linear");
 }
 let hoverRAF = 0;
@@ -414,8 +426,8 @@ function onClick(e) {
   if (popup) { popup.remove(); popup = null; }
   if (!inBounds(lng, lat)) { if (onLand(lng, lat)) demandPopup(e.lngLat); return; }
   const z = map.getZoom();
-  if (z < 8) map.flyTo({ center: [lng, lat], zoom: 9.2, duration: 1500 });
-  else if (z < 10.8) map.flyTo({ center: [lng, lat], zoom: 11.7, duration: 1500 });
+  if (z < 8) map.flyTo({ center: [lng, lat], zoom: zRegional(), duration: 1500 });
+  else if (fullRes() && z < 10.8) map.flyTo({ center: [lng, lat], zoom: CAT.zoom.max - 0.3, duration: 1500 });      // on to the native grid, where the copy has it
   pickLocation(lng, lat);
 }
 function demandPopup(lngLat) {
@@ -494,7 +506,7 @@ function renderLegend() {
 const histCache = new Map();
 function layerHist(ly) {
   if (!histCache.has(ly.id)) {
-    histCache.set(ly.id, fetch(DATA + ly.file.replace(/\.pmtiles$/, ".json"))
+    histCache.set(ly.id, fetch(fileURL(ly.file.replace(/\.pmtiles$/, ".json")))
       .then((r) => (r.ok ? r.json() : null)).then((j) => (j && j.hist_dn) || null).catch(() => null));
   }
   return histCache.get(ly.id);
@@ -641,7 +653,7 @@ function pickLocation(lng, lat) {
 async function loadPickSeries() {
   const { lng, lat } = state.pick, z = CAT.zoom.max, t = lngLatToTile(lng, lat, z), y = state.seriesYear;
   const where = `${Math.abs(lat).toFixed(4)}°${lat >= 0 ? "N" : "S"}, ${Math.abs(lng).toFixed(4)}°${lng >= 0 ? "E" : "W"}`;
-  $("#srKicker").textContent = "30 m pixel"; $("#srTitle").textContent = where; $("#srReset").hidden = false;
+  $("#srKicker").textContent = cellName(); $("#srTitle").textContent = where; $("#srReset").hidden = false;
   $("#srSub").textContent = "Reading the monthly maps…";
   const ids = [...MON.map((_, i) => `et_${y}${String(i + 1).padStart(2, "0")}`), ...MON.map((_, i) => `clim_${String(i + 1).padStart(2, "0")}`), "clim_annual"];
   let vals;
@@ -665,7 +677,7 @@ async function loadPickSeries() {
   $("#srSub").textContent = `${annual == null ? "" : `Mean annual ET ${fmt(annual)} mm/year (${TRAIN_YEARS()}). `}` +
     `${nObs} of 12 months of ${y} had a clear observation here.`;
   drawChart({ title: `Monthly ET at ${where}`, labels: MON, units: "mm/month", tipHead: (i) => `${MONL[i]}`,
-    note: "browse-tile values, rounded to 1 mm/month; use the GeoTIFFs for analysis",
+    note: (fullRes() ? "browse-tile values" : `means over a ${finestRes()} cell of the public preview tiles`) + ", rounded to 1 mm/month; use the GeoTIFFs for analysis",
     series: [{ name: y, short: y, color: "#2E7BA8", values: yr }, { name: `${TRAIN_YEARS()} mean`, short: "mean", color: "#8C8A80", values: clim }] });
   if (!recordModel || recordModel.pick !== state.pick) loadPickRecord(where);      // a year change keeps the record already read
 }
@@ -773,8 +785,9 @@ function drawRecord() {
 function recordCSV() {
   const R = recordModel; if (!R) return "";
   const { lng, lat } = R.pick;
-  return [`# Prithvi-OpenET-Tower monthly ET at ${lat.toFixed(5)}N ${lng.toFixed(5)}E (30 m pixel), data version ${CAT.version}`,
-    "# Browse-tile values rounded to 1 mm/month and resampled to Web Mercator. Use the GeoTIFFs for analysis.",
+  return [`# Prithvi-OpenET-Tower monthly ET at ${lat.toFixed(5)}N ${lng.toFixed(5)}E (${cellName()}), data version ${CAT.version}`,
+    "# Browse-tile values rounded to 1 mm/month and resampled to Web Mercator. Use the GeoTIFFs for analysis." +
+      (fullRes() ? "" : ` This public copy of the tiles stops at about ${finestRes()} per pixel: each value is the mean over such a cell.`),
     "# Empty et_mm_per_month = no clear-sky observation that month. period: train = within the model's training years.",
     "month,et_mm_per_month,period,sensors",
     ...R.months.map((m, k) => [m.ym, R.vals[k] == null ? "" : R.vals[k], m.period, m.sensors].join(","))].join("\n") + "\n";
@@ -1005,7 +1018,7 @@ function wire() {
   $("#jump").append(...CITIES.map(([name], i) => el("option", { value: i }, name)));
   $("#jump").onchange = (e) => {                                   // regional view around the city; the list snaps back to its prompt
     const c = CITIES[+e.target.value];
-    if (e.target.value !== "" && c) map.flyTo({ center: [c[1], c[2]], zoom: 9.2, duration: 1600 });
+    if (e.target.value !== "" && c) map.flyTo({ center: [c[1], c[2]], zoom: zRegional(), duration: 1600 });
     e.target.value = "";
   };
   $("#btnHome").onclick = () => map.fitBounds([[CAT.bounds[0], CAT.bounds[1]], [CAT.bounds[2], CAT.bounds[3]]], { padding: fitPadding(), duration: 1400 });
@@ -1026,6 +1039,20 @@ function wire() {
   addEventListener("resize", sendHeight);
   if (window.ResizeObserver) new ResizeObserver(sendHeight).observe(document.body);
 }
+/* Wording for a reduced copy of the tiles (see fullRes). The page's own text describes the full set;
+   this replaces every sentence that would promise more than the tiles on hand can show. */
+function applyPreviewWording() {
+  const fine = finestRes();
+  document.querySelector('#steps span[data-step="2"]').textContent = `Finest here · ${fine}`;
+  $("#hint").textContent = `Click anywhere on the peninsula: the map zooms in to about ${fine} per pixel, the finest level of this public preview, and the panel on the right shows the monthly series at that spot. The 30 m maps themselves are the GeoTIFFs.`;
+  $("#rcHead").textContent = "Full record at this spot";
+  $("#tilesZoom").textContent = `zoom ${CAT.zoom.min}–${CAT.zoom.max} on this public copy, about ${fine} per pixel at best; the full set goes to zoom ${CAT.zoom.native}, 30 m`;
+  const badge = $("#previewBadge");
+  badge.textContent = `Public preview · maps shown down to ${fine}`; badge.hidden = false;
+  const li = $("#abPreview");
+  li.replaceChildren(el("b", {}, "This site shows a reduced copy."), ` The maps on this page stop at about ${fine} per pixel, and a value read at a clicked spot is the mean over a ${fine} cell. The 30 m maps are the GeoTIFFs.`);
+  li.hidden = false;
+}
 async function main() {
   try {
     await loadCatalog();
@@ -1039,6 +1066,7 @@ async function main() {
   $("#glRecord").textContent = `${first} – ${last}`;
   $("#abMail").textContent = CFG.requestEmail; $("#abMail").href = "mailto:" + CFG.requestEmail;
   $("#footVer").textContent = `Data version ${CAT.version}`;
+  if (!fullRes()) applyPreviewWording();
   wire(); initRequest(); renderDownload(); renderCode();
   renderLayerCard(); renderLegend(); renderWhen(); renderCalendar(); renderPeninsulaSeries();
   initMap();

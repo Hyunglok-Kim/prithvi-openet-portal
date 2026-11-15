@@ -1,7 +1,9 @@
 /* Deployment settings. The portal itself is a static site; everything that differs between
    the lab-internal copy and the public one lives here (or in the URL, see below).
 
-   dataBase      where catalog.json and the .pmtiles files live. A page may override it with
+   dataBase      where catalog.json and the .pmtiles files live. The public site reads a reduced copy
+                 of the tiles (zoom 3-10) from GitHub Pages; a copy that holds the full set says so in
+                 its catalog and the portal then goes down to 30 m. A page may override it with
                  ?data=/some/path/ — same-origin paths only, so a link cannot point the map at
                  someone else's tiles.
    cogBase       public address of the GeoTIFFs. Empty until the archive is published; the
@@ -13,7 +15,7 @@
                  what people type.
    demandLagMonths  how far behind "today" a request can reach (input data arrive late). */
 window.PORTAL_CONFIG = {
-  dataBase: "./data/",
+  dataBase: "https://hyunglok-kim.github.io/prithvi-openet-tiles-1/",
   cogBase: "",
   requestEmail: "hyunglokkim@gist.ac.kr",
   requestEndpoint: "https://prithvi-openet-requests.hyunglokkim.workers.dev",

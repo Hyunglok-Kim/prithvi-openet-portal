@@ -6,9 +6,13 @@ native 30 m, shows on a small fixed world map where data exists, and takes reque
 regions. `README.md` is the short introduction; this file is the detail a maintainer (human or
 agent) needs before changing anything.
 
-**Status (November 2026): prototype.** The site is not served publicly yet and the tiles and
-GeoTIFFs are not published. The request backend (`worker/`) is deployed and connected. Lab-internal operations (storage paths, how the lab hosts its preview
-copy) are documented outside this repository.
+**Status (November 2026): public preview.** The portal is live on GitHub Pages
+(https://hyunglok-kim.github.io/prithvi-openet-portal/) and embedded on https://hydroai.net/data#et.
+The public site reads a **reduced copy** of the browse tiles — zoom 3–10, about 120 m — from three
+tile repositories, because GitHub Pages cannot hold the full 17.6 GB set; the full set (30 m) is
+served only inside the lab. The GeoTIFFs are not published. The request backend (`worker/`) is
+deployed and connected. Lab-internal operations (storage paths, how the lab hosts its own copy) are
+documented outside this repository.
 
 ## Layout
 
@@ -19,8 +23,10 @@ js/config.js        deployment settings (data location, public GeoTIFF address, 
 js/app.js           the app (MapLibre GL + PMTiles + SVG charts), one IIFE, no build step
 assets/             land-50m.json — Natural Earth land, cut at the antimeridian (public domain)
                     coverage-world.svg — the small world map in the coverage card (a generated file)
+                    logos/ — the two marks in the logo strip at the bottom
 pipeline/           tile and catalog builders (Python + GDAL), run where the GeoTIFFs live;
-                    make_coverage_map.py draws the coverage picture from the tiles
+                    make_coverage_map.py draws the coverage picture from the tiles;
+                    make_preview_copy.py makes the reduced copy of the tiles that the public site reads
 worker/             request-form backend (Cloudflare Worker): src/index.js, wrangler.toml, test.mjs
 tests/smoke.py      headless-browser test (Playwright); tile_ref.json holds tile checksums to compare against
 dev_server.py       local preview with HTTP Range support
@@ -100,21 +106,55 @@ python pipeline/make_coverage_map.py \
   the key under it if the list of regions changed. The smoke test checks that the mark sits where
   the region is on the Earth.
 
+## The reduced public copy
+
+GitHub Pages serves a site of at most 1 GB and files under 100 MB; the full tile set is 17.6 GB.
+Until the tiles have a proper public home, the public site reads a copy cut off at zoom 10:
+
+```bash
+python pipeline/make_preview_copy.py --src /path/to/out --out /path/to/public \
+    --max-zoom 10 --volume-mb 600 --name prithvi-openet-tiles          # needs pmtiles; seconds, not hours
+```
+
+- Tile bytes are copied untouched, so at zoom 3–10 the copy holds exactly the full set's numbers.
+  Zoom 10 is about 120 m; a value there is the mean of the valid 30 m pixels in the cell.
+- The copy is 1.69 GB, spread over three folders of under 600 MB. Each folder is one repository
+  with Pages on: `prithvi-openet-tiles-1` (catalog, climatology, first months), `-2`, `-3`. The
+  catalog addresses the other two as `../prithvi-openet-tiles-2/monthly/…`, which works because
+  the sites are neighbours on one host. `js/config.js` `dataBase` points at the first.
+- The catalog of a reduced copy has `zoom.max` (10) below `zoom.native` (12). The app reads that
+  pair (`fullRes()` in `app.js`) and changes every sentence that names a resolution: the badge by
+  the layer buttons, the third step of the resolution pill, the readout, the hint under the map,
+  "120 m cell" instead of "30 m pixel" on the series, the CSV header, the About and Code text. A
+  catalog without `zoom.native` is a full set and the page then goes down to 30 m.
+- After rebuilding tiles: run the script again into the same parent folder, then commit and push
+  each of the three folders. Pages redeploys in a minute or two.
+- To serve the full set publicly later, put it on a host with HTTP Range and CORS (Cloudflare R2
+  and Hugging Face datasets were both checked) and point `dataBase` there. Nothing else changes.
+
 ## Running it
 
 ```bash
-python dev_server.py --data /path/to/tiles          # http://127.0.0.1:8791/  (needs uvicorn + starlette)
-python tests/smoke.py --base http://127.0.0.1:8791/ --shots /tmp/shots --ref tests/tile_ref.json
-python tests/smoke.py --browser webkit --base http://127.0.0.1:8791/ --shots /tmp/shots-safari --ref tests/tile_ref.json
+python dev_server.py --data /path/to/tiles          # serves the tiles at /data/  (needs uvicorn + starlette)
+#   → http://127.0.0.1:8791/?data=/data/            # without ?data= the page reads the public copy
+python tests/smoke.py --base "http://127.0.0.1:8791/?data=/data/" --shots /tmp/shots --ref tests/tile_ref.json
+python tests/smoke.py --browser webkit --base "http://127.0.0.1:8791/?data=/data/" --shots /tmp/shots-safari --ref tests/tile_ref.json
+python tests/smoke.py --base https://hyunglok-kim.github.io/prithvi-openet-portal/ --shots /tmp/shots-public --ref tests/tile_ref.json
 node --test worker/test.mjs
 ```
+
+To preview a reduced copy before pushing it, serve its parent folder and name the first part:
+`python dev_server.py --data /path/to/public` → `…/?data=/data/prithvi-openet-tiles-1/`.
+The smoke test adapts to what it finds: with a full set it expects the second click to reach the
+native 30 m, with a reduced copy it expects the page to say so and to stop at the finest level.
 
 `python -m http.server` will not do: PMTiles needs HTTP Range requests. When a copy sits behind a
 session cookie, pass it to the smoke test as `SMOKE_COOKIE="name=value"`.
 
 URL parameters the app understands: `embed=1` (fixed map height, reports its height to the parent
-frame), `data=/path/` (same-origin tile location), `nas=/path` (a storage path to show in Download
-and Code when there are no public links), `intro=0` (skip the fly-in from the globe),
+frame), `hidefooter=1` (no logo strip: the page that embeds the portal draws its own),
+`data=/path/` (same-origin tile location), `nas=/path` (a storage path to show in Download and
+Code when there are no public links), `intro=0` (skip the fly-in from the globe),
 `tab=download|code|about|request`. Bump the `?v=` on the script and style tags in `index.html` when
 you change them.
 
@@ -151,18 +191,24 @@ most; a hidden `website` field and a two-second minimum fill time catch simple b
 quiet 200. The requester's address becomes the mail's reply-to. If abuse appears, add Cloudflare
 Turnstile to the form and verify the token in the Worker.
 
-## Going public
+## Public release (November 2026) and what is left
 
-1. Put the tiles and the GeoTIFFs somewhere public with HTTP Range and CORS for `GET` (an object
-   store such as Cloudflare R2 has no egress fee). Archive the GeoTIFFs with a DOI as well.
-2. In `js/config.js` set `dataBase` to the tile address and `cogBase` to the GeoTIFF address. The
-   Download tab then shows direct links and the code examples use them.
-3. Enable GitHub Pages for this repository (the tiles do not go in the repo; Pages has a 1 GB limit).
-4. Embed it the way the Hampyeong portal is embedded:
-   `<iframe src="https://<pages address>/index.html?embed=1" width="100%" height="1500" style="border:0"></iframe>`.
-   The app posts `{type: "portalHeight", height}` to its parent for auto-height.
-5. Remove `<meta name="robots" content="noindex">` from `index.html`, update the citation in the
-   About tab, and add the Pages origin to the Worker's `ALLOWED_ORIGINS`.
+Done: this repository has Pages on (`main`, root) and `noindex` is gone; the reduced tile copy is
+in three Pages repositories (see above); the Worker accepts the Pages origin.
+
+**hydroai.net.** The Data page is one HTML Embed (Webflow) whose hash routing shows one panel per
+dataset card. The ET panel (`#et`) holds
+`<iframe data-src="https://hyunglok-kim.github.io/prithvi-openet-portal/index.html?embed=1&hidefooter=1" …>`
+and a logo bar; the page's `message` listener sizes the frame from the portal's `portalHeight`
+posts. To edit it again: Webflow Designer → Pages → Data → Navigator → Code Embed → "Edit code
+embed". The editor is CodeMirror, so copy the text out, patch it, and paste it back.
+
+Left:
+1. **The full 30 m tiles in public.** Needs a host with HTTP Range and CORS (see "The reduced
+   public copy"). Then `dataBase` in `js/config.js`.
+2. **The GeoTIFFs.** Public address with a DOI, then `cogBase` in `js/config.js`: the Download tab
+   shows direct links and the code examples use them.
+3. **At publication:** the citation in the About tab, and a licence for this repository.
 
 ## Rules that must survive any redesign
 
@@ -174,6 +220,9 @@ Turnstile to the form and verify the token in the Worker.
   to the share of land observed. The default layer is the gap-free annual climatology.
 - **30 m is the grid, not the accuracy**, and regions without flux towers are unvalidated. Both
   statements stay in the About tab.
+- **Never promise 30 m where the tiles on hand are coarser.** A reduced copy says what its finest
+  level is, everywhere a resolution is named (`fullRes()`); a value read from it is called a cell
+  mean, not a pixel.
 - **Basemap without labels.** Satellite imagery plus our own city names; public label layers bring
   place-name disputes with them.
 - **The globe is the main view; coverage is a fixed picture.** A flat, interactive grey world map

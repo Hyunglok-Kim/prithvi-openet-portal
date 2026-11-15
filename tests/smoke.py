@@ -1,8 +1,13 @@
 #!/usr/bin/env python3
 """Browser smoke test for the portal (headless, Playwright).
 
-    python tests/smoke.py --base http://127.0.0.1:8791/ --shots /tmp/shots --ref tests/tile_ref.json
+    python tests/smoke.py --base "http://127.0.0.1:8791/?data=/data/" --shots /tmp/shots --ref tests/tile_ref.json
     python tests/smoke.py --browser webkit ...        # Safari's engine; also firefox
+    python tests/smoke.py --base https://<public site>/ --shots /tmp/shots-public --ref tests/tile_ref.json
+
+It adapts to the tiles it finds: with the full set it expects the second click to reach the native
+30 m; with a reduced copy (zoom.max below zoom.native in the catalog) it expects the page to say so
+and to stop at the finest level there is.
 
 Checks that the page boots without console errors, that tiles decode to the exact numbers the
 pipeline wrote (--ref, see tests/make_tile_ref.py), that hover, click-to-zoom, the pixel series,
@@ -75,6 +80,13 @@ with sync_playwright() as pw:
     check(page.evaluate("window.__portal.exact()"), "tiles are decoded byte for byte (no canvas round trip)")
     check(4 < info["zoom"] < 8, f"initial view fits the peninsula (zoom {info['zoom']:.2f})")
     check("km per pixel" in info["res"], f"overview resolution readout: {info['res']}")
+    zm = page.evaluate("window.__portal.zoom")
+    preview = zm["max"] < zm.get("native", zm["max"])
+    notes.append(f"tiles: zoom {zm['min']}-{zm['max']}" + (f" of {zm['native']} (a reduced copy)" if preview else " (the full set)"))
+    strip = page.evaluate("""() => { const f = document.querySelector('.logos-footer'), im = [...f.querySelectorAll('img')];
+        return {shown: getComputedStyle(f).display !== 'none', n: im.length, loaded: im.every((i) => i.complete && i.naturalWidth > 0),
+                noindex: !!document.querySelector('meta[name=robots]')}; }""")
+    check(strip["shown"] and strip["n"] == 2 and strip["loaded"] and not strip["noindex"], f"logo strip shown with {strip['n']} logos; page is indexable")
 
     # coverage picture: a file shown as an image (nothing in it reacts), with the region where the data is
     cov = page.evaluate("""async () => { const im = document.querySelector('#covMap'), r = im.getBoundingClientRect(),
@@ -110,6 +122,8 @@ with sync_playwright() as pw:
                 continue
             name, zxy = key.split("|")
             z, x, y = map(int, zxy.split("/"))
+            if z > zm["max"]:
+                continue                                        # a reduced copy does not hold this level
             lid = "clim_annual" if "annual" in name else "et_" + name.split("_")[-1].split(".")[0]
             got = page.evaluate("""async ([id, z, x, y]) => { const dn = await window.__portal.getDN(id, z, x, y);
                 if (!dn) return null; let s = 0, n = 0; for (const v of dn) { s += v; if (v === 255) n++; }
@@ -144,6 +158,9 @@ with sync_playwright() as pw:
     rows = [r for r in csv_text.splitlines() if r and not r.startswith("#")]
     check(rows[0] == "month,et_mm_per_month,period,sensors" and len(rows) == n_built + 1 and all(len(r.split(",")) == 4 for r in rows),
           f"record CSV: {len(rows) - 1} rows, first {rows[1]!r}, last {rows[-1]!r}")
+    head = csv_text.splitlines()[:2]
+    check((" cell)" in head[0] and "mean over such a cell" in head[1]) if preview else ("(30 m pixel)" in head[0] and "cell" not in head[1]),
+          f"record CSV names what a value stands for: {head[0][head[0].index('('):]}")
     page.evaluate("window.scrollTo(0, 0)")          # clicking the CSV button scrolled the side panel into view
     page.wait_for_timeout(200)
     page.screenshot(path=str(shots / "02_after_click.png"))
@@ -151,7 +168,15 @@ with sync_playwright() as pw:
     page.wait_for_timeout(2600)
     page.wait_for_function("window.__portal.map.areTilesLoaded()", timeout=60000)
     z2 = page.evaluate("window.__portal.map.getZoom()")
-    check(z2 > 11, f"second click reaches native resolution (zoom {z2:.2f}, {page.inner_text('#roRes')})")
+    if preview:
+        check(abs(z2 - z1) < 0.05 and "finest here" in page.inner_text("#roRes") and page.text_content("#srKicker").endswith(" cell")
+              and page.locator("#previewBadge").is_visible() and "Finest here" in page.text_content('#steps span[data-step="2"]')
+              and "public preview" in page.inner_text("#hint"),
+              f"reduced copy: a second click stays at the finest level ({page.inner_text('#roRes')}); values are from a "
+              f"{page.text_content('#srKicker')}; badge reads '{page.text_content('#previewBadge')}'")
+    else:
+        check(z2 > 11 and "(native)" in page.inner_text("#roRes") and page.text_content("#srKicker") == "30 m pixel" and page.locator("#previewBadge").is_hidden(),
+              f"second click reaches native resolution (zoom {z2:.2f}, {page.inner_text('#roRes')})")
     page.screenshot(path=str(shots / "03_native.png"))
 
     # chart hover tooltip and the table twin
@@ -287,8 +312,9 @@ with sync_playwright() as pw:
 
     p2.route("**/js/config.js*", with_endpoint)
     p2.route("https://requests.example.test/**", endpoint)
-    p2.goto(a.base + sep + "intro=0&tab=request", wait_until="domcontentloaded")
+    p2.goto(a.base + sep + "intro=0&tab=request&hidefooter=1", wait_until="domcontentloaded")
     p2.wait_for_function("window.__portal && window.__portal.map", timeout=60000)
+    check(p2.locator(".logos-footer").is_hidden(), "hidefooter=1 hides the logo strip (a page that embeds the portal draws its own)")
     check(p2.inner_text("#rqSend") == "Send request" and p2.locator("#rqMail").is_visible(), "with an endpoint the button reads: " + p2.inner_text("#rqSend"))
 
     def fill():

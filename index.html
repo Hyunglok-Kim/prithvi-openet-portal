@@ -4,14 +4,13 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Prithvi-OpenET-Tower · 30 m monthly ET</title>
-<meta name="robots" content="noindex" />
 
 <link rel="preconnect" href="https://unpkg.com" crossorigin />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600&family=Source+Serif+4:opsz,wght@8..60,500;8..60,600&display=swap" />
 <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5.24.1/dist/maplibre-gl.css" />
-<link rel="stylesheet" href="css/portal.css?v=20261115i" />
+<link rel="stylesheet" href="css/portal.css?v=20261115k" />
 </head>
 <body>
 
@@ -56,6 +55,7 @@
           <button data-mode="month" title="One month of one year">Single month</button>
         </div>
         <div class="when" id="when"></div>
+        <span class="badge" id="previewBadge" hidden></span>
       </div>
 
       <div class="mapwrap">
@@ -139,7 +139,7 @@
         </div>
         <div class="tablewrap" id="srTable" hidden></div>
         <div class="record" id="recordBox" hidden>
-          <p class="mini-h">Full record at this pixel</p>
+          <p class="mini-h" id="rcHead">Full record at this pixel</p>
           <p class="sub" id="rcSub"></p>
           <figure class="chart" id="chartRecord"></figure>
           <div class="chart-actions">
@@ -211,7 +211,7 @@
     <p>Layer → Add Layer → Add Raster Layer, source type <i>Protocol: HTTP(S)</i> (or <i>File</i> on the lab storage), then paste the file address. QGIS reads the overviews first, so the whole peninsula opens quickly. Set the band rendering to <i>Singleband pseudocolor</i> on band 1 and remember the values are mm/month × 10.</p>
 
     <h3>Browse tiles</h3>
-    <p>The map on this site does not use pictures of the data. It reads 8-bit numeric tiles (one PMTiles file per month, Web Mercator, zoom 3–12) in which each pixel stores ET in whole mm/month, and colours them in the browser. They are meant for looking, not for analysis: they are resampled and rounded. Use the GeoTIFFs for any calculation.</p>
+    <p>The map on this site does not use pictures of the data. It reads 8-bit numeric tiles (one PMTiles file per month, Web Mercator, <span id="tilesZoom">zoom 3–12</span>) in which each pixel stores ET in whole mm/month, and colours them in the browser. They are meant for looking, not for analysis: they are resampled and rounded. Use the GeoTIFFs for any calculation.</p>
   </div>
 </section>
 
@@ -246,6 +246,7 @@
 
     <h3 id="ab-read">Read this before you use the numbers</h3>
     <ul>
+      <li id="abPreview" hidden></li>
       <li><b>Training period.</b> The model was trained on 2016–2024. Months before 2016 and after 2024 are extrapolations in time and are marked as such on this site and in each file.</li>
       <li><b>Gaps.</b> Empty pixels are common in the summer monsoon and in 2013–2015, when only Landsat was available. A regional mean covers only the pixels that were observed, so read it together with the share of land observed.</li>
       <li><b>30 m is the grid, not the accuracy.</b> Accuracy at single pixels and single fields has not been verified, and many Korean fields are smaller than a pixel.</li>
@@ -363,11 +364,20 @@
   <span id="footVer"></span>
 </footer>
 
+<!-- Logo strip, fixed to the bottom of the window as on the lab's other portals. ?hidefooter=1 hides it:
+     a page that embeds the portal draws its own. -->
+<footer class="logos-footer" aria-label="Organizations">
+  <div class="logos-row">
+    <a href="https://hydroai.net" target="_blank" rel="noopener" class="logo-hydroai" title="HydroAI"><img src="assets/logos/hydroai.png" alt="HydroAI"></a>
+    <a href="https://www.gist.ac.kr/kr/main.html" target="_blank" rel="noopener" title="GIST"><img src="assets/logos/GIST.png" alt="GIST"></a>
+  </div>
+</footer>
+
 <div class="tip" id="tip" role="tooltip" hidden></div>
 
 <script src="https://unpkg.com/maplibre-gl@5.24.1/dist/maplibre-gl.js"></script>
 <script src="https://unpkg.com/pmtiles@4.5.0/dist/pmtiles.js"></script>
-<script src="js/config.js?v=20261115j"></script>
-<script src="js/app.js?v=20261115i"></script>
+<script src="js/config.js?v=20261115k"></script>
+<script src="js/app.js?v=20261115k"></script>
 </body>
 </html>

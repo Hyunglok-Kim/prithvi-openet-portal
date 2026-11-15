@@ -5,8 +5,12 @@ geospatial foundation model (Prithvi-EO-2.0) trained to reproduce OpenET from Ha
 Sentinel-2 reflectance and adapted to flux-tower observations. HydroAI Lab, Gwangju Institute of
 Science and Technology.
 
-**Status: prototype.** The maps and tiles are not published yet and this site is not served
-publicly. The model code is at
+**Live:** https://hyunglok-kim.github.io/prithvi-openet-portal/ — also embedded at
+https://hydroai.net/data#et.
+
+**Status: public preview.** The public site shows the maps down to about 120 m per pixel (a reduced
+copy of the browse tiles; GitHub Pages cannot hold the full set). The 30 m GeoTIFFs will be
+released with the paper. The model code is at
 [Prithvi_OpenET_code_public](https://github.com/Hyunglok-Kim/Prithvi_OpenET_code_public).
 
 ## What it does
@@ -14,7 +18,8 @@ publicly. The model code is at
 - Opens on a globe turned to the region with ready-made maps (the Korean Peninsula, April 2013
   onward). A small fixed world map beside it shows where data exists; all other land is grey and
   can be requested.
-- Click to zoom from a regional overview (about 2 km per pixel) to 120 m and then the native 30 m.
+- Click to zoom from the overview (about 2 km per pixel) to 120 m. Where the full tile set is
+  served, a second click goes on to the native 30 m.
 - Three layers: mean annual ET, the mean seasonal cycle, and any single month. Months outside the
   model's 2016–2024 training period are flagged.
 - Click a pixel for its monthly series, its full record, and a CSV.
@@ -46,8 +51,11 @@ You need a folder of tiles built with `pipeline/` (a `catalog.json` plus the `.p
 
 ```bash
 pip install uvicorn starlette
-python dev_server.py --data /path/to/tiles      # http://127.0.0.1:8791/
+python dev_server.py --data /path/to/tiles      # then open http://127.0.0.1:8791/?data=/data/
 ```
+
+Without `?data=` the page reads the public copy of the tiles, so opening `index.html` through any
+web server shows the live data.
 
 ## Credits
 
