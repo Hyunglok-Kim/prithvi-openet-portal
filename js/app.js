@@ -5,13 +5,21 @@
      PMTiles file. A tile is an 8-bit PNG whose pixel is ET in whole units (DN x dn_step);
      DN 255 means no data. MapLibre asks our "etn://" protocol for tiles; we fetch the PNG by
      HTTP range request, keep the decoded numbers, and hand back a coloured bitmap. Because the
-     numbers stay in memory, the cursor readout and the pixel series need no extra server. */
+     numbers stay in memory, the cursor readout and the pixel series need no extra server.
+
+   Two optional parts of the catalog
+     background  a global ET product from somewhere else, drawn under our maps so the rest of the
+                 globe is not empty. It is context, not this model's output, and every value read
+                 from it is shown with its name.
+     fine        small areas that a reduced copy of the tiles keeps at the native zoom. Their tiles
+                 sit in a second archive per layer; everywhere else the copy's finest level is
+                 enlarged in the browser. */
 (() => {
 "use strict";
 
 /* ───────────────────────────── configuration ───────────────────────────── */
 const CFG = Object.assign({ dataBase: "./data/", cogBase: "", requestEmail: "", requestEndpoint: "", demandFirstMonth: "2013-04",
-                            demandLagMonths: 3, nasPath: "" }, window.PORTAL_CONFIG || {});
+                            demandLagMonths: 3, nasPath: "", paperStatus: "" }, window.PORTAL_CONFIG || {});
 const Q = new URLSearchParams(location.search);
 {
   const d = Q.get("data");                       // same-origin absolute path only
@@ -29,7 +37,8 @@ const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct
 const MONL = ["January", "February", "March", "April", "May", "June", "July", "August", "September",
               "October", "November", "December"];
 const TILE = 256;
-const GLOBE_ZOOM = 1.7;          // the opening view: the globe, turned to the region that has data
+const GLOBE_ZOOM = 1.7;          // the opening view: the whole globe, turned to the region that has our maps
+const GLOBE_CENTER = [127.6, 30];
 const FIXED_RANGE = { month: [0, 180], clim: [0, 180], annual: [400, 1100] };
 /* Magnitude ramp: yellow-green-blue, lightness falling monotonically (analogous hues, so it
    stays ordered for colour-blind readers and in grayscale). Always shown with its scale. */
@@ -72,6 +81,16 @@ function niceCeil(v) {
   const p = Math.pow(10, Math.floor(Math.log10(v || 1))), n = v / p;
   return (n <= 1 ? 1 : n <= 2 ? 2 : n <= 2.5 ? 2.5 : n <= 5 ? 5 : 10) * p;
 }
+const numWord = (n) => ["no", "one", "two", "three", "four", "five", "six"][n] || String(n);
+/* Is the point inside the ring (an array of [lng, lat])? Even-odd rule. */
+function inRing(ring, lng, lat) {
+  let c = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const [xi, yi] = ring[i], [xj, yj] = ring[j];
+    if ((yi > lat) !== (yj > lat) && lng < (xj - xi) * (lat - yi) / (yj - yi) + xi) c = !c;
+  }
+  return c;
+}
 async function mapLimit(items, n, fn) {
   const out = new Array(items.length); let i = 0;
   await Promise.all(Array.from({ length: Math.min(n, items.length) }, async () => {
@@ -111,9 +130,13 @@ const hideTip = () => { tip.hidden = true; };
 /* ───────────────────────────── state ───────────────────────────── */
 let CAT = null, map = null, landGeo = null, popup = null, pickMarker = null;
 const L = new Map();                 // layer id → layer record
+let BG = null;                       // the background product (catalog.background), or null
+const BGL = new Map();               // background layer id → record
+let FINE = [], FINE_ZOOM = 0;        // areas a reduced copy keeps at the native zoom (catalog.fine), and that zoom
 const state = { mode: "annual", ym: null, climMonth: 7, scale: "fixed", opacity: 1, pick: null,
                 seriesYear: null, playing: null };
-let lut32 = new Uint32Array(256), lutKey = "";
+const lut32 = new Uint32Array(256), lutBg = new Uint32Array(256);
+let lutKey = "";
 let chartModel = null;
 
 function currentLayerId() {
@@ -122,6 +145,13 @@ function currentLayerId() {
   return "et_" + state.ym.replace("-", "");
 }
 const currentLayer = () => L.get(currentLayerId());
+/* The background layer that stands behind the layer on show, when the catalog has one for it
+   ("annual", or the layer's own id). No stand-ins: a July map never gets an annual background. */
+function currentBg() {
+  if (!BG) return null;
+  const ly = currentLayer();
+  return BGL.get(ly.kind === "annual" ? "bg_annual" : "bg_" + ly.id) || null;
+}
 function currentRange(ly) {
   if (state.scale === "fixed") return FIXED_RANGE[ly.kind];
   const step = ly.kind === "annual" ? 50 : 10;
@@ -135,10 +165,18 @@ const DN_MAX = 900;
 /* A layer's file is an address relative to the catalog. A copy spread over several sites writes
    "../other-site/monthly/x.pmtiles" there, so join it properly rather than gluing strings. */
 const fileURL = (rel) => new URL(rel, DATA).href;
-function archive(id) {
-  let a = archives.get(id);
-  if (!a) { a = new pmtiles.PMTiles(new pmtiles.FetchSource(fileURL(L.get(id).file))); archives.set(id, a); }
+const layerRec = (id) => L.get(id) || BGL.get(id);
+function openArchive(key, rel) {
+  let a = archives.get(key);
+  if (!a) { a = new pmtiles.PMTiles(new pmtiles.FetchSource(fileURL(rel))); archives.set(key, a); }
   return a;
+}
+const archive = (id) => openArchive(id, layerRec(id).file);
+/* The layer's second archive, with the native-zoom tiles of the sample areas (a reduced copy only). */
+const fineArchive = (id) => (L.has(id) && L.get(id).fine ? openArchive(id + "#fine", L.get(id).fine) : null);
+async function readTile(a, z, x, y) {
+  const res = await a.getZxy(z, x, y);
+  return res && res.data && res.data.byteLength ? decodeDN(res.data) : null;
 }
 /* Tiles carry numbers, so they are decoded byte for byte here and not through a canvas: Safari
    colour-manages canvas pixels and hands back values that are off by one. An 8-bit grayscale PNG is
@@ -199,11 +237,10 @@ function getDN(id, z, x, y) {
   if (pending.has(key)) return pending.get(key);
   const p = (async () => {
     let dn;
-    if (z < CAT.zoom.min) dn = await coarserDN(id, z, x, y);
-    else {
-      const res = await archive(id).getZxy(z, x, y);
-      dn = res && res.data && res.data.byteLength ? await decodeDN(res.data) : null;
-    }
+    if (BGL.has(id)) dn = z <= BG.zoom.max ? await readTile(archive(id), z, x, y) : null;
+    else if (z < CAT.zoom.min) dn = await coarserDN(id, z, x, y);
+    else if (z > CAT.zoom.max) dn = await finerDN(id, z, x, y);
+    else dn = await readTile(archive(id), z, x, y);
     dnCache.set(key, dn);
     if (dnCache.size > DN_MAX) dnCache.delete(dnCache.keys().next().value);
     return dn;
@@ -241,26 +278,58 @@ async function coarserDN(id, z, x, y) {
   for (let i = 0; i < out.length; i++) if (cnt[i] >= need) out[i] = Math.round(sum[i] / cnt[i]);
   return out;
 }
-function buildLUT() {
-  const ly = currentLayer(), [lo, hi] = currentRange(ly);
-  for (let d = 0; d < 255; d++) {
-    const [r, g, b] = rampRGB((d * ly.dn_step - lo) / (hi - lo));
-    lut32[d] = (255 << 24 | b << 16 | g << 8 | r) >>> 0;       // little-endian RGBA
+/* Above the top zoom of a reduced copy. Where the tile touches a sample area the layer's second archive
+   has it, with native pixels inside the area's outline. Everywhere else the copy's finest level is
+   enlarged, each cell drawn as a block — the same pixels the second archive holds outside the outlines. */
+const tileBounds = (z, x, y) => {
+  const n = 2 ** z, lat = (j) => Math.atan(Math.sinh(Math.PI * (1 - 2 * j / n))) * 180 / Math.PI;
+  return [x / n * 360 - 180, lat(y + 1), (x + 1) / n * 360 - 180, lat(y)];
+};
+function tileTouchesFine(z, x, y) {
+  const b = tileBounds(z, x, y);
+  return FINE.some((a) => b[0] < a.bounds[2] && b[2] > a.bounds[0] && b[1] < a.bounds[3] && b[3] > a.bounds[1]);
+}
+async function finerDN(id, z, x, y) {
+  if (z <= FINE_ZOOM && tileTouchesFine(z, x, y)) {
+    const fa = fineArchive(id), dn = fa ? await readTile(fa, z, x, y) : null;
+    if (dn) return dn;
   }
-  lut32[255] = 0;
+  const zs = CAT.zoom.max, d = z - zs, n = TILE >> d;
+  const up = await getDN(id, zs, x >> d, y >> d);
+  if (!up || n < 1) return null;
+  const ox = (x - ((x >> d) << d)) * n, oy = (y - ((y >> d) << d)) * n, out = new Uint8Array(TILE * TILE);
+  let any = false;
+  for (let py = 0; py < TILE; py++) {
+    const row = (oy + (py >> d)) * TILE + ox;
+    for (let px = 0; px < TILE; px++) { const v = up[row + (px >> d)]; out[py * TILE + px] = v; if (v !== 255) any = true; }
+  }
+  return any ? out : null;
+}
+function fillLUT(lut, step, lo, hi) {
+  for (let d = 0; d < 255; d++) {
+    const [r, g, b] = rampRGB((d * step - lo) / (hi - lo));
+    lut[d] = (255 << 24 | b << 16 | g << 8 | r) >>> 0;         // little-endian RGBA
+  }
+  lut[255] = 0;
+}
+function buildLUT() {
+  const ly = currentLayer(), [lo, hi] = currentRange(ly), bg = currentBg();
+  fillLUT(lut32, ly.dn_step, lo, hi);
+  if (bg) fillLUT(lutBg, bg.dn_step, lo, hi);                    // the background follows the same colour scale
   lutKey = `${ly.id}_${lo}_${hi}`;
 }
 function registerProtocol() {
   maplibregl.addProtocol("etn", async (params) => {
     const m = /^etn:\/\/([^/]+)\/(\d+)\/(\d+)\/(\d+)/.exec(params.url);
-    const dn = m && L.has(m[1]) ? await getDN(m[1], +m[2], +m[3], +m[4]) : null;
+    const dn = m && layerRec(m[1]) ? await getDN(m[1], +m[2], +m[3], +m[4]) : null;
     if (!dn) return { data: await createImageBitmap(new ImageData(1, 1)) };
-    const img = new ImageData(TILE, TILE), px = new Uint32Array(img.data.buffer);
-    for (let i = 0; i < px.length; i++) px[i] = lut32[dn[i]];
+    const img = new ImageData(TILE, TILE), px = new Uint32Array(img.data.buffer), lut = BGL.has(m[1]) ? lutBg : lut32;
+    for (let i = 0; i < px.length; i++) px[i] = lut[dn[i]];
     return { data: await createImageBitmap(img) };
   });
 }
 const tileURL = () => `etn://${currentLayerId()}/{z}/{x}/{y}?k=${lutKey}`;
+const bgTileURL = (bg) => `etn://${bg.id}/{z}/{x}/{y}?k=${lutKey}`;
 
 /* ───────────────────────────── catalog ───────────────────────────── */
 async function loadCatalog() {
@@ -274,6 +343,11 @@ async function loadCatalog() {
   if (CAT.annual) L.set("clim_annual", { ...CAT.annual, kind: "annual", label: `Mean annual ET, ${CAT.record.train[0].slice(0, 4)}–${CAT.record.train[1].slice(0, 4)}` });
   for (const c of CAT.clim || []) L.set(c.id, { ...c, kind: "clim", label: `${MONL[c.month - 1]} mean, ${CAT.record.train[0].slice(0, 4)}–${CAT.record.train[1].slice(0, 4)}` });
   for (const m of CAT.months) if (m.tiles) L.set(m.tiles.id, { ...m.tiles, kind: "month", ym: m.ym, rec: m, label: ymLabel(m.ym) });
+  if (CAT.background && CAT.background.layers && Object.keys(CAT.background.layers).length) {
+    BG = CAT.background;
+    for (const ly of Object.values(BG.layers)) BGL.set(ly.id, { ...ly, kind: "bg" });
+  }
+  if (CAT.fine && (CAT.fine.areas || []).length && CAT.fine.zoom > CAT.zoom.max) { FINE = CAT.fine.areas; FINE_ZOOM = CAT.fine.zoom; }
   const built = CAT.months.filter((m) => m.tiles);
   if (!L.size) throw new Error("The catalog lists no browse tiles yet.");
   const julys = built.filter((m) => m.ym.endsWith("-07") && m.period === "train");
@@ -292,34 +366,42 @@ function demandWindow() {
 function inBounds(lng, lat) { const b = CAT.bounds; return lng >= b[0] && lng <= b[2] && lat >= b[1] && lat <= b[3]; }
 function onLand(lng, lat) {
   if (!landGeo) return true;
-  const inRing = (ring) => {
-    let c = false;
-    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
-      const [xi, yi] = ring[i], [xj, yj] = ring[j];
-      if ((yi > lat) !== (yj > lat) && lng < (xj - xi) * (lat - yi) / (yj - yi) + xi) c = !c;
-    }
-    return c;
-  };
+  const hit = (ring) => inRing(ring, lng, lat);
   for (const f of landGeo.features) {
     const polys = f.geometry.type === "Polygon" ? [f.geometry.coordinates] : f.geometry.coordinates;
-    for (const poly of polys) if (inRing(poly[0]) && !poly.slice(1).some(inRing)) return true;
+    for (const poly of polys) if (hit(poly[0]) && !poly.slice(1).some(hit)) return true;
   }
   return false;
 }
+/* The finest tile the ET source can be asked for: the copy's top zoom, or the native zoom when the
+   copy keeps sample areas at it (the tiles in between are then made in finerDN). */
+const srcMaxZoom = () => (FINE.length ? FINE_ZOOM : CAT.zoom.max);
 /* MapLibre rounds the zoom for raster sources and 256-px tiles sit one level ahead of the map zoom. */
-const tileZoom = () => clamp(Math.round(map.getZoom() + 1), 0, CAT.zoom.max);
+const tileZoom = () => clamp(Math.round(map.getZoom() + 1), 0, srcMaxZoom());
 /* A copy of the tiles may stop short of the native grid: a public preview on a host with size limits
    has zoom.max below zoom.native in its catalog. Everything that names a resolution asks here, so the
    page never promises 30 m where the tiles on hand are coarser. */
 const fullRes = () => CAT.zoom.max >= (CAT.zoom.native || CAT.zoom.max);
 const groundRes = (z, lat) => 40075016.686 * Math.cos(lat * Math.PI / 180) / (TILE * 2 ** z);
 const finestRes = () => fmtRes(groundRes(CAT.zoom.max, (CAT.bounds[1] + CAT.bounds[3]) / 2));
-const cellName = () => (fullRes() ? "30 m pixel" : `${finestRes()} cell`);
+/* A sample area is the one place where a reduced copy does go down to the native grid. What a value
+   stands for therefore depends on where it was read. */
+const fineAreaAt = (lng, lat) => FINE.find((a) => lng >= a.bounds[0] && lng <= a.bounds[2] && lat >= a.bounds[1] && lat <= a.bounds[3] && inRing(a.ring, lng, lat)) || null;
+const topZoomAt = (lng, lat) => (fineAreaAt(lng, lat) ? FINE_ZOOM : CAT.zoom.max);      // the finest tile zoom with numbers of its own at that place
+const nativeAt = (lng, lat) => topZoomAt(lng, lat) >= (CAT.zoom.native || CAT.zoom.max);
+const cellNameAt = (lng, lat) => (nativeAt(lng, lat) ? "30 m pixel" : `${finestRes()} cell`);
 const zRegional = () => Math.min(9.2, CAT.zoom.max - 0.3);      // map zoom of the first click-in: tile zoom 10, about 120 m
+/* Outside the region with maps there is nothing finer than the background. From this map zoom on the
+   page says so: where a background cell has grown to about 16 px on screen, and never before the
+   coverage card has faded out (7.2), so the note has room at the top of the map. */
+const outNoteZoom = (lat) => Math.max(7.3, BG ? Math.log2(40075016.686 * Math.cos(lat * Math.PI / 180) * 16 / (512 * BG.cell_km * 1000)) : 0);
+/* The background fades as the view goes past its detail, so the imagery shows where there is no map. */
+const ctxOpacity = (k) => ["interpolate", ["linear"], ["zoom"], 7, 0.9 * k, 9.5, 0.35 * k];
 
 function initMap() {
   buildLUT();
   registerProtocol();
+  const bg = currentBg();
   map = new maplibregl.Map({
     container: "map",
     style: {
@@ -330,39 +412,49 @@ function initMap() {
         sat: { type: "raster", tileSize: 256, maxzoom: 18,
                tiles: ["https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"],
                attribution: "Imagery © Esri, Maxar, Earthstar Geographics" },
-        et: { type: "raster", tileSize: 256, minzoom: 0, maxzoom: CAT.zoom.max, bounds: CAT.bounds,
+        /* The background: a global product from somewhere else, under our maps (see currentBg). */
+        ...(BG ? { ctx: { type: "raster", tileSize: 256, minzoom: 0, maxzoom: BG.zoom.max,
+                          tiles: [bgTileURL(bg || BGL.values().next().value)], attribution: `Background ET: ${BG.name}` } } : {}),
+        et: { type: "raster", tileSize: 256, minzoom: 0, maxzoom: srcMaxZoom(), bounds: CAT.bounds,
               tiles: [tileURL()], attribution: "ET: Prithvi-OpenET-Tower, HydroAI Lab (GIST)" },
       },
       layers: [
         { id: "bg", type: "background", paint: { "background-color": "#0F1318" } },
         { id: "sat", type: "raster", source: "sat", paint: { "raster-saturation": -0.3, "raster-brightness-max": 0.92 } },
+        ...(BG ? [{ id: "ctx", type: "raster", source: "ctx", layout: { visibility: bg ? "visible" : "none" },
+                    paint: { "raster-opacity": ctxOpacity(1), "raster-fade-duration": 150 } }] : []),
         { id: "et", type: "raster", source: "et", paint: { "raster-opacity": 1, "raster-fade-duration": 150 } },
       ],
     },
-    center: [127.6, 30], zoom: GLOBE_ZOOM, minZoom: 1.2, maxZoom: CAT.zoom.max + 2.5,
+    center: GLOBE_CENTER, zoom: GLOBE_ZOOM, minZoom: 1.2, maxZoom: srcMaxZoom() + 2.5,
     attributionControl: { compact: true }, dragRotate: false, pitchWithRotate: false, touchPitch: false,
   });
   map.touchZoomRotate.disableRotation();
   map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
   map.addControl(new maplibregl.ScaleControl({ unit: "metric", maxWidth: 110 }), "bottom-left");
-  window.__portal = { map, state, getDN, L, dnCache, exact: () => exactDecode, zoom: CAT.zoom };          // handle for tests and debugging
+  window.__portal = { map, state, getDN, L, dnCache, exact: () => exactDecode, zoom: CAT.zoom,          // handle for tests and debugging
+                      bg: BG, fine: FINE, fineZoom: FINE_ZOOM, note: () => noteShown };
 
   map.on("error", (e) => console.warn("[map]", e && e.error ? e.error.message : e));
   map.on("load", () => {
     $("#boot").classList.add("out");
     setTimeout(() => $("#boot").remove(), 500);
     addMarkers();
+    addFineAreas();
     loadLand();
-    const b = [[CAT.bounds[0], CAT.bounds[1]], [CAT.bounds[2], CAT.bounds[3]]];
-    /* Open on the globe, then move in to the region that has data. */
-    if (Q.get("intro") === "0" || REDUCED) map.fitBounds(b, { padding: fitPadding(), duration: 0 });
-    else setTimeout(() => map.fitBounds(b, { padding: fitPadding(), duration: 2600 }), 900);
+    /* The page opens on the whole globe and stays there until the visitor moves in. A link can ask
+       for the region with maps instead (view=region); if the map is not on screen yet (another tab
+       is open), the fit waits until it is. */
+    if (Q.get("view") === "region") { if (map.getContainer().clientWidth) fitRegion(0); else fitWhenShown = true; }
   });
   map.on("zoom", onZoom);
+  map.on("move", onMove);
   map.on("mousemove", onHover);
   map.on("mouseout", () => { $("#roVal").textContent = ""; });
   map.on("click", onClick);
 }
+let fitWhenShown = false;
+const fitRegion = (duration) => map.fitBounds([[CAT.bounds[0], CAT.bounds[1]], [CAT.bounds[2], CAT.bounds[3]]], { padding: fitPadding(), duration });
 /* Room to leave for the panels over the map when a region is fitted. On a narrow map the coverage card
    would sit on the region, so the region is fitted to the right of it. */
 function fitPadding() {
@@ -378,9 +470,30 @@ async function loadLand() {
     landGeo = await (await fetch(new URL("assets/land-50m.json", location.href))).json();
     map.addSource("land", { type: "geojson", data: landGeo });
     const fade = (a) => ["interpolate", ["linear"], ["zoom"], 2.6, a, 5.2, 0];
-    map.addLayer({ id: "land", type: "fill", source: "land", paint: { "fill-color": "#F0EEE6", "fill-opacity": fade(0.17) } }, "et");
+    /* The tint goes under the background layer, so it shows only where that has no value (deserts, ice);
+       the coastline goes over it. */
+    map.addLayer({ id: "land", type: "fill", source: "land", paint: { "fill-color": "#F0EEE6", "fill-opacity": fade(0.17) } }, map.getLayer("ctx") ? "ctx" : "et");
     map.addLayer({ id: "land-line", type: "line", source: "land", paint: { "line-color": "#F0EEE6", "line-width": 0.7, "line-opacity": fade(0.5) } }, "et");
   } catch (e) { console.warn("[land outline]", e.message); }
+}
+/* The sample areas of a reduced copy: an outline each, and a tag that takes the visitor there. */
+let fineTags = [];
+function addFineAreas() {
+  if (!FINE.length) return;
+  map.addSource("fine", { type: "geojson", data: { type: "FeatureCollection",
+    features: FINE.map((a) => ({ type: "Feature", properties: { id: a.id }, geometry: { type: "Polygon", coordinates: [a.ring] } })) } });
+  map.addLayer({ id: "fine-casing", type: "line", source: "fine", minzoom: 5.5, paint: { "line-color": "rgba(15,19,24,.75)", "line-width": 3.6 } });
+  map.addLayer({ id: "fine-line", type: "line", source: "fine", minzoom: 5.5, paint: { "line-color": "#ffffff", "line-width": 1.6 } });
+  fineTags = FINE.map((a) => {
+    const btn = el("button", { class: "fine-tag", title: `${a.name}: this area is shown at the native 30 m`,
+      onclick: (e) => { e.stopPropagation(); goFine(a); } }, [a.name, el("small", {}, "30 m")]);       // not a click on the map underneath
+    return new maplibregl.Marker({ element: el("div", {}, btn), anchor: "bottom", offset: [0, -3] }).setLngLat([a.center[0], a.bounds[3]]).addTo(map);
+  });
+  onZoom();
+}
+function goFine(a) {
+  if (popup) { popup.remove(); popup = null; }
+  map.flyTo({ center: a.center, zoom: FINE_ZOOM - 0.3, duration: 1800 });
 }
 let cityMarkers = [], pulse = null;
 function addMarkers() {
@@ -395,39 +508,68 @@ function addMarkers() {
 }
 function onZoom() {
   if (!map) return;
-  const z = map.getZoom(), zc = tileZoom();
+  const z = map.getZoom();
   if (pulse) pulse.getElement().style.display = z < 4.2 ? "" : "none";
   for (const m of cityMarkers) m.getElement().firstChild.style.opacity = z >= 5.6 && z <= 10.6 ? "1" : "0";
+  for (const m of fineTags) m.getElement().firstChild.style.display = z >= 4.2 ? "" : "none";
   $("#coverCard").classList.toggle("dim", z > 7.2);
-  const res = groundRes(zc, map.getCenter().lat);
-  const step = zc <= 8 ? 0 : zc < CAT.zoom.max ? 1 : 2;
-  document.querySelectorAll("#steps span").forEach((s) => s.classList.toggle("on", +s.dataset.step === step));
-  $("#roRes").textContent = z < 2.6 ? "Zoom in to see the data" : `${fmtRes(res)} per pixel${zc === CAT.zoom.max ? (fullRes() ? " (native)" : " (finest here)") : ""}`;
   if (map.getLayer("et")) map.setPaintProperty("et", "raster-resampling", z > CAT.zoom.max - 0.4 ? "nearest" : "linear");
+  onMove();
+}
+/* What depends on where the view is, not only on how far in: the resolution readout, the three-step
+   pill and the note about what is published there. Once per frame while the map moves. */
+let moveRAF = 0;
+function onMove() { cancelAnimationFrame(moveRAF); moveRAF = requestAnimationFrame(updateView); }
+function updateView() {
+  if (!map) return;
+  const z = map.getZoom(), c = map.getCenter(), ours = inBounds(c.lng, c.lat);
+  const top = topZoomAt(c.lng, c.lat), zd = Math.min(tileZoom(), top), native = nativeAt(c.lng, c.lat);
+  const step = zd <= 8 ? 0 : zd < top ? 1 : 2;
+  $("#steps").classList.toggle("off", !ours && z >= 2.6);          // the three steps describe our maps: nothing to say elsewhere
+  document.querySelectorAll("#steps span").forEach((s) => s.classList.toggle("on", ours && +s.dataset.step === step));
+  if (!fullRes()) document.querySelector('#steps span[data-step="2"]').textContent = native ? "Native 30 m" : `Finest here · ${finestRes()}`;
+  $("#roRes").textContent = z < 2.6 ? "Click or scroll to zoom in"
+    : ours ? `${fmtRes(groundRes(zd, c.lat))} per pixel${zd === top ? (native ? " (native)" : " (finest here)") : ""}`
+    : currentBg() ? `Background, ${fmt(BG.cell_km)} km cells` : "No ready-made maps here";
+  updateNote();
+}
+/* The value under the cursor from a tile already decoded: the one on screen, else a coarser parent.
+   undefined = nothing loaded there, 255 = no data. */
+function dnAt(id, lng, lat, zTop) {
+  for (let z = zTop; z >= 0; z--) {
+    const t = lngLatToTile(lng, lat, z), dn = dnCache.get(`${id}/${z}/${t.x}/${t.y}`);
+    if (dn !== undefined) return dn ? dn[t.py * TILE + t.px] : 255;
+  }
+  return undefined;
 }
 let hoverRAF = 0;
 function onHover(e) {
   cancelAnimationFrame(hoverRAF);
   hoverRAF = requestAnimationFrame(() => {
-    const { lng, lat } = e.lngLat, ly = currentLayer(), out = $("#roVal");
-    if (!inBounds(lng, lat)) { out.textContent = ""; return; }
-    for (let z = Math.min(CAT.zoom.max, tileZoom() + 1); z >= 0; z--) {   // the tile on screen, else a coarser parent already loaded
-      const t = lngLatToTile(lng, lat, z), dn = dnCache.get(`${ly.id}/${z}/${t.x}/${t.y}`);
-      if (dn === undefined) continue;
-      const d = dn ? dn[t.py * TILE + t.px] : 255;
-      out.textContent = d === 255 ? "no data" : `${fmt(d * ly.dn_step)} ${ly.units}`;
-      return;
-    }
-    out.textContent = "";
+    const { lng, lat } = e.lngLat, ly = currentLayer(), bg = currentBg(), out = $("#roVal");
+    const d = inBounds(lng, lat) ? dnAt(ly.id, lng, lat, Math.min(srcMaxZoom(), tileZoom() + 1)) : undefined;
+    if (d !== undefined && d !== 255) { out.textContent = `${fmt(d * ly.dn_step)} ${ly.units}`; return; }
+    /* No value of ours there: say what the background shows, under its own name. */
+    const b = bg ? dnAt(bg.id, lng, lat, Math.min(BG.zoom.max, tileZoom() + 1)) : undefined;
+    out.textContent = b !== undefined && b !== 255 ? `${BG.name}: ${fmt(b * bg.dn_step)} ${bg.units}` : d === 255 ? "no data" : "";
   });
 }
 function onClick(e) {
-  const { lng, lat } = e.lngLat;
+  const { lng, lat } = e.lngLat, z = map.getZoom();
   if (popup) { popup.remove(); popup = null; }
-  if (!inBounds(lng, lat)) { if (onLand(lng, lat)) demandPopup(e.lngLat); return; }
-  const z = map.getZoom();
+  if (!inBounds(lng, lat)) {
+    /* Outside the region with maps a click moves in on the place, in two steps, as far as the background
+       has anything to show. There the note at the top says what is published, and the next click offers
+       to request the place. */
+    if (!onLand(lng, lat)) return;
+    const stop = outNoteZoom(lat) + 0.2;
+    if (z < 3.6) map.flyTo({ center: [lng, lat], zoom: 4.6, duration: 1400 });
+    else if (z < stop - 0.4) map.flyTo({ center: [lng, lat], zoom: stop, duration: 1500 });
+    else demandPopup(e.lngLat);
+    return;
+  }
   if (z < 8) map.flyTo({ center: [lng, lat], zoom: zRegional(), duration: 1500 });
-  else if (fullRes() && z < 10.8) map.flyTo({ center: [lng, lat], zoom: CAT.zoom.max - 0.3, duration: 1500 });      // on to the native grid, where the copy has it
+  else if (nativeAt(lng, lat) && z < 10.8) map.flyTo({ center: [lng, lat], zoom: (CAT.zoom.native || CAT.zoom.max) - 0.3, duration: 1500 });      // on to the native grid, where the copy has it
   pickLocation(lng, lat);
 }
 function demandPopup(lngLat) {
@@ -438,12 +580,59 @@ function demandPopup(lngLat) {
   ]);
   popup = new maplibregl.Popup({ maxWidth: "300px" }).setLngLat(lngLat).setDOMContent(node).addTo(map);
 }
+/* A note at the top of the map when the view has gone past what is published at that place:
+     "outside"  zoomed in on land that has no maps of ours (only the background, if any);
+     "finest"   zoomed past the finest level of a reduced copy, outside its sample areas.
+   It names what is on screen and where the detail is. Closing it keeps it closed until the view
+   leaves that situation. */
+let noteShown = null, noteOff = null;
+const reviewClause = () => (CFG.paperStatus ? `While the paper is ${CFG.paperStatus}, ` : "");
+const capFirst = (s) => s.charAt(0).toUpperCase() + s.slice(1);
+function noteKind() {
+  const z = map.getZoom(), c = map.getCenter();
+  if (!inBounds(c.lng, c.lat)) return z >= outNoteZoom(c.lat) && onLand(c.lng, c.lat) ? "outside" : null;
+  return !fullRes() && z >= CAT.zoom.max - 0.4 && !fineAreaAt(c.lng, c.lat) ? "finest" : null;
+}
+function updateNote(redraw) {
+  const kind = noteKind(), box = $("#zoomNote");
+  if (!kind) noteOff = null;
+  const show = kind && noteOff !== kind ? kind : null;
+  if (show === noteShown && !redraw) return;
+  noteShown = show;
+  box.hidden = !show;
+  if (!show) return;
+  const home = () => $("#btnHome").click();
+  if (show === "outside") {
+    const bg = currentBg();
+    $("#znHead").textContent = "Only the Korean Peninsula has detailed maps for now";
+    $("#znText").textContent = (bg ? `What you see here is the background layer (${BG.name}, about ${fmt(BG.cell_km)} km per cell), not Prithvi-OpenET-Tower. ` : "") +
+      capFirst(`${reviewClause()}ready-made maps are published for the Korean Peninsula only. Other regions are produced on request.`);
+    $("#znBtns").replaceChildren(
+      el("button", { class: "primary small", onclick: home }, "Go to the Korean Peninsula"),
+      el("button", { class: "ghost", onclick: () => { const c = map.getCenter(); prefillRequest(c.lng, c.lat); showTab("request"); } }, "Request this area"));
+  } else {
+    const n = FINE.length;
+    $("#znHead").textContent = `${finestRes()} is the finest level here for now`;
+    $("#znText").textContent = n
+      ? capFirst(`${reviewClause()}the native 30 m maps are shown only for the ${numWord(n)} area${n > 1 ? "s" : ""} presented in the paper. The full 30 m maps will be released with the paper.`)
+      : `This public preview stops at about ${finestRes()} per pixel. The 30 m maps will be released with the paper.`;
+    $("#znBtns").replaceChildren(...FINE.map((a) => el("button", { class: "primary small", onclick: () => goFine(a) }, `${a.name} · 30 m`)));
+  }
+}
+function syncBackground() {
+  if (!map || !map.getLayer("ctx")) return;
+  const bg = currentBg();
+  if (bg) map.getSource("ctx").setTiles([bgTileURL(bg)]);
+  map.setLayoutProperty("ctx", "visibility", bg ? "visible" : "none");
+}
 function applyLayer() {
   buildLUT();
   const src = map && map.getSource("et");
   if (src) src.setTiles([tileURL()]);
+  syncBackground();
   renderLayerCard(); renderLegend(); renderWhen(); renderCalendar();
   if (!state.pick) renderPeninsulaSeries();
+  if (map) { updateView(); updateNote(true); }                    // both name the background, which comes and goes with the layer
 }
 
 /* ───────────────────────────── layer controls ───────────────────────────── */
@@ -499,6 +688,9 @@ function renderLegend() {
   const mid = (lo + hi) / 2;
   $("#lgTicks").replaceChildren(el("span", {}, lo > 0 ? `≤ ${fmt(lo)}` : fmt(lo)), el("span", {}, fmt(mid)), el("span", {}, `≥ ${fmt(hi)}`));
   document.querySelectorAll("#scaleSeg button").forEach((b) => b.classList.toggle("on", b.dataset.scale === state.scale));
+  const bg = currentBg(), note = $("#lgBg");
+  note.hidden = !bg;
+  if (bg) note.textContent = `Rest of the globe: ${BG.name}${BG.period ? `, ${BG.period} mean` : ""}, about ${fmt(BG.cell_km)} km — a background layer, not this model.`;
   drawHist(ly, lo, hi);
 }
 /* Distribution of the layer's pixels along the same axis as the colour bar. The histogram lives in the
@@ -651,9 +843,9 @@ function pickLocation(lng, lat) {
   loadPickSeries();
 }
 async function loadPickSeries() {
-  const { lng, lat } = state.pick, z = CAT.zoom.max, t = lngLatToTile(lng, lat, z), y = state.seriesYear;
+  const { lng, lat } = state.pick, z = topZoomAt(lng, lat), t = lngLatToTile(lng, lat, z), y = state.seriesYear;
   const where = `${Math.abs(lat).toFixed(4)}°${lat >= 0 ? "N" : "S"}, ${Math.abs(lng).toFixed(4)}°${lng >= 0 ? "E" : "W"}`;
-  $("#srKicker").textContent = cellName(); $("#srTitle").textContent = where; $("#srReset").hidden = false;
+  $("#srKicker").textContent = cellNameAt(lng, lat); $("#srTitle").textContent = where; $("#srReset").hidden = false;
   $("#srSub").textContent = "Reading the monthly maps…";
   const ids = [...MON.map((_, i) => `et_${y}${String(i + 1).padStart(2, "0")}`), ...MON.map((_, i) => `clim_${String(i + 1).padStart(2, "0")}`), "clim_annual"];
   let vals;
@@ -677,7 +869,7 @@ async function loadPickSeries() {
   $("#srSub").textContent = `${annual == null ? "" : `Mean annual ET ${fmt(annual)} mm/year (${TRAIN_YEARS()}). `}` +
     `${nObs} of 12 months of ${y} had a clear observation here.`;
   drawChart({ title: `Monthly ET at ${where}`, labels: MON, units: "mm/month", tipHead: (i) => `${MONL[i]}`,
-    note: (fullRes() ? "browse-tile values" : `means over a ${finestRes()} cell of the public preview tiles`) + ", rounded to 1 mm/month; use the GeoTIFFs for analysis",
+    note: (nativeAt(lng, lat) ? "browse-tile values" : `means over a ${finestRes()} cell of the public preview tiles`) + ", rounded to 1 mm/month; use the GeoTIFFs for analysis",
     series: [{ name: y, short: y, color: "#2E7BA8", values: yr }, { name: `${TRAIN_YEARS()} mean`, short: "mean", color: "#8C8A80", values: clim }] });
   if (!recordModel || recordModel.pick !== state.pick) loadPickRecord(where);      // a year change keeps the record already read
 }
@@ -688,7 +880,7 @@ async function loadPickSeries() {
 let recordModel = null;
 async function loadPickRecord(where) {
   const mine = state.pick, { lng, lat } = mine, months = CAT.months.filter((m) => m.tiles);
-  const z = CAT.zoom.max, t = lngLatToTile(lng, lat, z);
+  const z = topZoomAt(lng, lat), t = lngLatToTile(lng, lat, z);
   recordModel = null;
   $("#recordBox").hidden = false;
   $("#chartRecord").replaceChildren(); $("#rcTable").replaceChildren();
@@ -785,9 +977,9 @@ function drawRecord() {
 function recordCSV() {
   const R = recordModel; if (!R) return "";
   const { lng, lat } = R.pick;
-  return [`# Prithvi-OpenET-Tower monthly ET at ${lat.toFixed(5)}N ${lng.toFixed(5)}E (${cellName()}), data version ${CAT.version}`,
+  return [`# Prithvi-OpenET-Tower monthly ET at ${lat.toFixed(5)}N ${lng.toFixed(5)}E (${cellNameAt(lng, lat)}), data version ${CAT.version}`,
     "# Browse-tile values rounded to 1 mm/month and resampled to Web Mercator. Use the GeoTIFFs for analysis." +
-      (fullRes() ? "" : ` This public copy of the tiles stops at about ${finestRes()} per pixel: each value is the mean over such a cell.`),
+      (nativeAt(lng, lat) ? "" : ` This public copy of the tiles stops at about ${finestRes()} per pixel: each value is the mean over such a cell.`),
     "# Empty et_mm_per_month = no clear-sky observation that month. period: train = within the model's training years.",
     "month,et_mm_per_month,period,sensors",
     ...R.months.map((m, k) => [m.ym, R.vals[k] == null ? "" : R.vals[k], m.period, m.sensors].join(","))].join("\n") + "\n";
@@ -917,7 +1109,7 @@ function boxInfo() {
 function updateArea() {
   const b = boxInfo(), out = $("#rqArea");
   out.textContent = b ? `About ${fmt(b.km2 < 100 ? b.km2 : Math.round(b.km2 / 100) * 100)} km² — roughly ${fmt(b.tiles)} HLS tile${b.tiles > 1 ? "s" : ""}, ${fmt(Math.round(b.km2 / 0.0009 / 1e6))} million 30 m pixels per month.`
-    : "Longitude and latitude in degrees. Tip: click anywhere outside Korea on the map, then “Request this area”.";
+    : "Longitude and latitude in degrees. Tip: on the map, zoom in on a place outside Korea and choose “Request this area”.";
 }
 function requestText() {
   const b = boxInfo(), v = (k) => fld(k).value.trim();
@@ -1002,7 +1194,10 @@ function initRequest() {
 function showTab(name) {
   document.querySelectorAll(".tab").forEach((t) => { const on = t.dataset.tab === name; t.classList.toggle("on", on); t.setAttribute("aria-selected", on); });
   document.querySelectorAll(".tabpane").forEach((p) => { const on = p.id === "tab-" + name; p.hidden = !on; p.classList.toggle("on", on); });
-  if (name === "explore" && map) map.resize();
+  if (name === "explore" && map) {
+    map.resize();
+    if (fitWhenShown) { fitWhenShown = false; fitRegion(0); }
+  }
   hideTip(); sendHeight();
 }
 function sendHeight() {
@@ -1016,15 +1211,19 @@ function wire() {
   document.querySelectorAll(".tab").forEach((t) => t.addEventListener("click", () => showTab(t.dataset.tab)));
   document.querySelectorAll("#modeSeg button").forEach((b) => b.addEventListener("click", () => { stopPlay(); state.mode = b.dataset.mode; applyLayer(); }));
   document.querySelectorAll("#scaleSeg button").forEach((b) => b.addEventListener("click", () => { state.scale = b.dataset.scale; applyLayer(); }));
-  $("#opacity").addEventListener("input", (e) => map.setPaintProperty("et", "raster-opacity", e.target.value / 100));
+  $("#opacity").addEventListener("input", (e) => {
+    map.setPaintProperty("et", "raster-opacity", e.target.value / 100);
+    if (map.getLayer("ctx")) map.setPaintProperty("ctx", "raster-opacity", ctxOpacity(e.target.value / 100));
+  });
+  $("#znClose").onclick = () => { noteOff = noteShown; updateNote(); };
   $("#jump").append(...CITIES.map(([name], i) => el("option", { value: i }, name)));
   $("#jump").onchange = (e) => {                                   // regional view around the city; the list snaps back to its prompt
     const c = CITIES[+e.target.value];
     if (e.target.value !== "" && c) map.flyTo({ center: [c[1], c[2]], zoom: zRegional(), duration: 1600 });
     e.target.value = "";
   };
-  $("#btnHome").onclick = () => map.fitBounds([[CAT.bounds[0], CAT.bounds[1]], [CAT.bounds[2], CAT.bounds[3]]], { padding: fitPadding(), duration: 1400 });
-  $("#btnGlobe").onclick = () => map.flyTo({ center: [127.6, 30], zoom: GLOBE_ZOOM, duration: 1800 });
+  $("#btnHome").onclick = () => fitRegion(1400);
+  $("#btnGlobe").onclick = () => map.flyTo({ center: GLOBE_CENTER, zoom: GLOBE_ZOOM, duration: 1800 });
   $("#srReset").onclick = () => { state.pick = null; recordModel = null; $("#recordBox").hidden = true; if (pickMarker) pickMarker.remove(); renderPeninsulaSeries(); };
   $("#rcTableBtn").onclick = (e) => { const t = $("#rcTable"); t.hidden = !t.hidden; e.currentTarget.textContent = t.hidden ? "Show table" : "Hide table"; e.currentTarget.setAttribute("aria-expanded", String(!t.hidden)); sendHeight(); };
   $("#rcCsv").onclick = () => download("prithvi_openet_pixel_record.csv", recordCSV(), "text/csv");
@@ -1044,16 +1243,32 @@ function wire() {
 /* Wording for a reduced copy of the tiles (see fullRes). The page's own text describes the full set;
    this replaces every sentence that would promise more than the tiles on hand can show. */
 function applyPreviewWording() {
-  const fine = finestRes();
+  const fine = finestRes(), n = FINE.length, names = FINE.map((a) => a.name).join(" and ");
+  const areas = `${numWord(n)} small area${n > 1 ? "s" : ""}`;
   document.querySelector('#steps span[data-step="2"]').textContent = `Finest here · ${fine}`;
-  $("#hint").textContent = `Click anywhere on the peninsula: the map zooms in to about ${fine} per pixel, the finest level of this public preview, and the panel on the right shows the monthly series at that spot. The 30 m maps themselves are the GeoTIFFs.`;
+  $("#hint").textContent = `Click the Korean Peninsula: the map zooms in to about ${fine} per pixel, the finest level of this public preview, and the panel on the right shows the monthly series at that spot.` +
+    (n ? ` ${capFirst(areas)} shown in the paper, ${names}, ${n > 1 ? "go" : "goes"} on to the native 30 m; ${n > 1 ? "they are" : "it is"} outlined on the map.` : "") +
+    " The 30 m maps themselves are the GeoTIFFs.";
   $("#rcHead").textContent = "Full record at this spot";
-  $("#tilesZoom").textContent = `zoom ${CAT.zoom.min}–${CAT.zoom.max} on this public copy, about ${fine} per pixel at best; the full set goes to zoom ${CAT.zoom.native}, 30 m`;
+  $("#tilesZoom").textContent = `zoom ${CAT.zoom.min}–${CAT.zoom.max} on this public copy, about ${fine} per pixel at best` +
+    (n ? `, plus zoom ${FINE_ZOOM} (30 m) inside ${areas}` : "") + `; the full set goes to zoom ${CAT.zoom.native}, 30 m`;
   const badge = $("#previewBadge");
-  badge.textContent = `Public preview · maps shown down to ${fine}`; badge.hidden = false;
+  badge.textContent = n ? `Public preview · ${fine}, and 30 m in ${numWord(n)} area${n > 1 ? "s" : ""}` : `Public preview · maps shown down to ${fine}`; badge.hidden = false;
   const li = $("#abPreview");
-  li.replaceChildren(el("b", {}, "This site shows a reduced copy."), ` The maps on this page stop at about ${fine} per pixel, and a value read at a clicked spot is the mean over a ${fine} cell. The 30 m maps are the GeoTIFFs.`);
+  li.replaceChildren(el("b", {}, "This site shows a reduced copy."), ` The maps on this page stop at about ${fine} per pixel, and a value read at a clicked spot is the mean over a ${fine} cell.` +
+    (n ? ` ${capFirst(areas)} shown in the paper (${names}) ${n > 1 ? "keep" : "keeps"} the native 30 m.` : "") + " The 30 m maps are the GeoTIFFs.");
   li.hidden = false;
+}
+/* Where the catalog has a background layer, the About tab says what it is and credits it. */
+function applyBackgroundWording() {
+  const only = Object.keys(BG.layers).length === 1 && BG.layers.annual;
+  const li = $("#abBg");
+  li.replaceChildren(el("b", {}, "The rest of the globe is a background layer."),
+    ` Outside the Korean Peninsula the map shows ${BG.long || BG.name}${BG.period ? `, the ${BG.period} mean` : ""}${BG.grid ? ` on a ${BG.grid} grid` : ""} (about ${fmt(BG.cell_km)} km).` +
+    " It is a different product, there to give the globe its context: Prithvi-OpenET-Tower has not been run for those places, and no value from the background is part of this dataset." +
+    (only ? " It is shown with the annual-mean layer only." : ""));
+  li.hidden = false;
+  $("#abCredits").append(` Background layer: ${BG.long || BG.name}${BG.doi ? ` (doi:${BG.doi})` : ""}.`);
 }
 async function main() {
   try {
@@ -1068,7 +1283,9 @@ async function main() {
   $("#glRecord").textContent = `${first} – ${last}`;
   $("#abMail").textContent = CFG.requestEmail; $("#abMail").href = "mailto:" + CFG.requestEmail;
   $("#footVer").textContent = `Data version ${CAT.version}`;
+  if (CFG.paperStatus) $("#abPaper").textContent = `Manuscript ${CFG.paperStatus}.`;
   if (!fullRes()) applyPreviewWording();
+  if (BG) applyBackgroundWording();
   wire(); initRequest(); renderDownload(); renderCode();
   renderLayerCard(); renderLegend(); renderWhen(); renderCalendar(); renderPeninsulaSeries();
   initMap();

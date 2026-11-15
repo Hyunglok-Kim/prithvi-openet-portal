@@ -1,0 +1,16 @@
+{
+  "type": "FeatureCollection",
+  "note": "Areas that a reduced public copy of the tiles shows at the native 30 m (make_preview_copy.py --fine). They are the two Korean scenes that the paper itself shows: each ring is the 224 x 224 pixel (6.72 km) input chip of that scene, converted from UTM zone 52N.",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": { "id": "cheorwon", "name": "Cheorwon", "about": "rice paddies and upland fields" },
+      "geometry": { "type": "Polygon", "coordinates": [[[127.21056, 38.2311], [127.2873, 38.23224], [127.28872, 38.1717], [127.21204, 38.17056], [127.21056, 38.2311]]] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "id": "anmyeon", "name": "Anmyeon", "about": "evergreen needleleaf forest on the west coast" },
+      "geometry": { "type": "Polygon", "coordinates": [[[126.32062, 36.53508], [126.39561, 36.53675], [126.39764, 36.47623], [126.32271, 36.47457], [126.32062, 36.53508]]] }
+    }
+  ]
+}

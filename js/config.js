@@ -13,7 +13,10 @@
                  posted there and arrives as an email; when empty, the form opens an email draft.
                  It is set here and never from the page address, so a crafted link cannot redirect
                  what people type.
-   demandLagMonths  how far behind "today" a request can reach (input data arrive late). */
+   demandLagMonths  how far behind "today" a request can reach (input data arrive late).
+   paperStatus   where the paper stands, in words that finish "While the paper is …" and "Manuscript …".
+                 The notes on the map about what is published so far, and the citation, use it.
+                 Empty at publication: the notes then drop that clause. */
 window.PORTAL_CONFIG = {
   dataBase: "https://hyunglok-kim.github.io/prithvi-openet-tiles-1/",
   cogBase: "",
@@ -21,4 +24,5 @@ window.PORTAL_CONFIG = {
   requestEndpoint: "https://prithvi-openet-requests.hyunglokkim.workers.dev",
   demandFirstMonth: "2013-04",
   demandLagMonths: 3,
+  paperStatus: "under review",
 };

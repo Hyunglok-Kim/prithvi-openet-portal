@@ -33,6 +33,8 @@ def main():
 
     layers = {}
     for p in glob.glob(os.path.join(a.out_dir, "*", "*.json")):
+        if os.path.basename(os.path.dirname(p)) == "background":
+            continue                                   # not a layer of ours: see the end of this function
         s = json.load(open(p))
         s["file"] = os.path.relpath(os.path.join(os.path.dirname(p), s["file"]), a.out_dir)
         layers[s["id"]] = s
@@ -88,6 +90,10 @@ def main():
         "clim": [dict(pick(layers[f"clim_{m:02d}"]), month=m) for m in range(1, 13) if f"clim_{m:02d}" in layers],
         "months": months,
     }
+    # a background layer for the rest of the globe, if make_background.py has made one
+    block = os.path.join(a.out_dir, "background", "background.json")
+    if os.path.exists(block):
+        cat["background"] = json.load(open(block))
     out = os.path.join(a.out_dir, "catalog.json")
     with open(out + ".part", "w") as fh:
         json.dump(cat, fh, separators=(",", ":"))

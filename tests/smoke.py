@@ -5,14 +5,20 @@
     python tests/smoke.py --browser webkit ...        # Safari's engine; also firefox
     python tests/smoke.py --base https://<public site>/ --shots /tmp/shots-public --ref tests/tile_ref.json
 
-It adapts to the tiles it finds: with the full set it expects the second click to reach the native
-30 m; with a reduced copy (zoom.max below zoom.native in the catalog) it expects the page to say so
-and to stop at the finest level there is.
+It adapts to the tiles it finds:
+  - the full set: the second click reaches the native 30 m;
+  - a reduced copy (zoom.max below zoom.native in the catalog): the page says so and stops at the
+    finest level there is, with a note at the top of the map when the visitor zooms past it;
+  - a reduced copy with sample areas (catalog "fine"): those areas go on to 30 m and hold the full
+    set's numbers; outside their outlines nothing is finer than the copy;
+  - a background layer (catalog "background"): the rest of the globe carries another product, and
+    every value read from it is shown under that product's name.
 
-Checks that the page boots without console errors, that tiles decode to the exact numbers the
-pipeline wrote (--ref, see tests/make_tile_ref.py), that hover, click-to-zoom, the pixel series,
-the full record and its CSV, the globe, the fixed coverage picture, the tabs and the request form
-work, and saves screenshots to look at. Exit code 1 if any check fails.
+Checks that the page boots without console errors and opens on the whole globe, that tiles decode to
+the exact numbers the pipeline wrote (--ref, see tests/make_tile_ref.py), that hover, click-to-zoom,
+the pixel series, the full record and its CSV, the notes about what is published where, the fixed
+coverage picture, the tabs and the request form work, and saves screenshots to look at. Exit code 1
+if any check fails.
 
 When the copy under test sits behind a session cookie, put "name=value" in the SMOKE_COOKIE
 environment variable.
@@ -31,7 +37,7 @@ ap = argparse.ArgumentParser()
 ap.add_argument("--base", default="http://127.0.0.1:8791/")
 ap.add_argument("--shots", required=True)
 ap.add_argument("--ref", default="")
-ap.add_argument("--query", default="intro=0")
+ap.add_argument("--query", default="")
 ap.add_argument("--browser", default="chromium", choices=["chromium", "webkit", "firefox"])
 ap.add_argument("--cookie", default="", help="name=value to send with every request (internal copy); "
                 "or set SMOKE_COOKIE in the environment to keep it off the command line")
@@ -63,30 +69,70 @@ with sync_playwright() as pw:
     page.on("requestfailed", lambda r: bad.append((r.url, r.failure)) if not any(x in str(r.failure) for x in aborted) else None)
     page.on("response", lambda r: bad.append((r.url, r.status)) if r.status >= 400 else None)
 
+    def settle(ms=1500):
+        """Let a move finish and its tiles arrive."""
+        page.wait_for_timeout(ms)
+        page.wait_for_function("window.__portal.map.areTilesLoaded()", timeout=60000)
+        page.wait_for_timeout(300)
+
+    def xy(lng, lat):
+        """Window position of a place on the map."""
+        b = page.locator("#map").bounding_box()
+        p = page.evaluate("([a, b]) => { const p = window.__portal.map.project([a, b]); return [p.x, p.y]; }", [lng, lat])
+        return b["x"] + p[0], b["y"] + p[1]
+
+    def view():
+        return page.evaluate("(() => { const m = window.__portal.map, c = m.getCenter(); return {z: m.getZoom(), lng: c.lng, lat: c.lat}; })()")
+
+    def note():
+        return page.evaluate("""() => { const n = document.querySelector('#zoomNote');
+            return {kind: window.__portal.note(), shown: !n.hidden && getComputedStyle(n).display !== 'none', text: n.innerText,
+                    buttons: [...n.querySelectorAll('#znBtns button')].map((b) => b.textContent)}; }""")
+
     sep = "&" if "?" in a.base else "?"
     page.goto(a.base + (sep + a.query if a.query else ""), wait_until="domcontentloaded")
     page.wait_for_function("window.__portal && window.__portal.map && window.__portal.map.loaded()", timeout=60000)
     page.wait_for_function("document.querySelector('#boot') === null", timeout=15000)
-    page.wait_for_timeout(3500)
-    page.wait_for_function("window.__portal.map.areTilesLoaded()", timeout=60000)
-    page.screenshot(path=str(shots / "01_explore_annual.png"))
+    settle(3500)                                      # long enough for an automatic move to have started, if there were one
+    page.screenshot(path=str(shots / "01_open_globe.png"))
 
     info = page.evaluate("""() => { const p = window.__portal, m = p.map;
         return {zoom: m.getZoom(), center: m.getCenter(), cached: p.dnCache.size, layers: p.L.size,
                 projection: m.getProjection && JSON.stringify(m.getProjection()), title: document.querySelector('#lyTitle').textContent,
-                mean: document.querySelector('#lyMean').textContent, res: document.querySelector('#roRes').textContent}; }""")
+                mean: document.querySelector('#lyMean').textContent, res: document.querySelector('#roRes').textContent,
+                paper: (window.PORTAL_CONFIG || {}).paperStatus || ''}; }""")
     notes.append(f"info {info}")
     check(info["cached"] > 0, f"numeric tiles decoded and cached ({info['cached']})")
     check(page.evaluate("window.__portal.exact()"), "tiles are decoded byte for byte (no canvas round trip)")
-    check(4 < info["zoom"] < 8, f"initial view fits the peninsula (zoom {info['zoom']:.2f})")
-    check("km per pixel" in info["res"], f"overview resolution readout: {info['res']}")
+    check(abs(info["zoom"] - 1.7) < 0.05 and "globe" in (info["projection"] or "") and "zoom in" in info["res"],
+          f"the page opens on the whole globe and stays there (zoom {info['zoom']:.2f}; readout: {info['res']})")
     zm = page.evaluate("window.__portal.zoom")
     preview = zm["max"] < zm.get("native", zm["max"])
-    notes.append(f"tiles: zoom {zm['min']}-{zm['max']}" + (f" of {zm['native']} (a reduced copy)" if preview else " (the full set)"))
+    bg = page.evaluate("window.__portal.bg && {name: window.__portal.bg.name, km: window.__portal.bg.cell_km, layers: Object.keys(window.__portal.bg.layers)}")
+    fine = page.evaluate("window.__portal.fine.map((a) => ({id: a.id, name: a.name, center: a.center}))")
+    fine_zoom = page.evaluate("window.__portal.fineZoom")
+    notes.append(f"tiles: zoom {zm['min']}-{zm['max']}" + (f" of {zm['native']} (a reduced copy)" if preview else " (the full set)")
+                 + (f"; 30 m kept in {', '.join(f['name'] for f in fine)}" if fine else "")
+                 + (f"; background {bg['name']} ({', '.join(bg['layers'])})" if bg else "; no background layer"))
     strip = page.evaluate("""() => { const f = document.querySelector('.logos-footer'), im = [...f.querySelectorAll('img')];
         return {shown: getComputedStyle(f).display !== 'none', n: im.length, loaded: im.every((i) => i.complete && i.naturalWidth > 0),
                 noindex: !!document.querySelector('meta[name=robots]')}; }""")
     check(strip["shown"] and strip["n"] == 2 and strip["loaded"] and not strip["noindex"], f"logo strip shown with {strip['n']} logos; page is indexable")
+
+    # the background layer: another product under our maps, named wherever a value from it is shown
+    if bg:
+        lg = page.evaluate("(() => { const n = document.querySelector('#lgBg'); return {shown: !n.hidden, text: n.textContent}; })()")
+        check(lg["shown"] and bg["name"] in lg["text"] and "not this model" in lg["text"], f"legend names the background: {lg['text']}")
+        page.mouse.move(*xy(105, 30))                              # central China, on the opening globe
+        page.wait_for_timeout(400)
+        ro = page.inner_text("#roVal")
+        check(ro.startswith(bg["name"] + ":") and "mm/year" in ro, f"a value read outside our maps carries the product's name: '{ro}'")
+        page.mouse.move(*xy(127.9, 36.6))                          # central Korea
+        page.wait_for_timeout(400)
+        ro = page.inner_text("#roVal")
+        check("mm/year" in ro and bg["name"] not in ro, f"a value read on our maps does not: '{ro}'")
+        vis = page.evaluate("window.__portal.map.getLayoutProperty('ctx', 'visibility')")
+        check(vis == "visible", "background layer drawn with the annual-mean layer")
 
     # coverage picture: a file shown as an image (nothing in it reacts), with the region where the data is
     cov = page.evaluate("""async () => { const im = document.querySelector('#covMap'), r = im.getBoundingClientRect(),
@@ -101,12 +147,12 @@ with sync_playwright() as pw:
 
     def equal_earth(lon, lat):                                   # the projection of pipeline/make_coverage_map.py, in its drawing units
         a1, a2, a3, a4, m = 1.340264, -0.081106, 0.000893, 0.003796, math.sqrt(3) / 2
-        def xy(lo, la):
+        def proj(lo, la):
             th = math.asin(m * math.sin(math.radians(la)))
             return (math.radians(lo) * math.cos(th) / (m * (a1 + 3 * a2 * th**2 + th**6 * (7 * a3 + 9 * a4 * th**2))),
                     th * (a1 + a2 * th**2 + th**6 * (a3 + a4 * th**2)))
-        xmax, ytop, k = xy(180, 0)[0], xy(0, 90)[1], 720 / (2 * xy(180, 0)[0])
-        x, y = xy(lon, lat)
+        xmax, ytop, k = proj(180, 0)[0], proj(0, 90)[1], 720 / (2 * proj(180, 0)[0])
+        x, y = proj(lon, lat)
         return (x + xmax) * k, (ytop - y) * k
 
     ex, ey = equal_earth(127.7, 37.9)                            # the middle of the peninsula
@@ -120,16 +166,38 @@ with sync_playwright() as pw:
         for key, exp in ref.items():
             if not exp:
                 continue
-            name, zxy = key.split("|")
+            name, zxy, *win = key.split("|")
             z, x, y = map(int, zxy.split("/"))
-            if z > zm["max"]:
-                continue                                        # a reduced copy does not hold this level
+            if z > zm["max"] and not (win and fine and z <= fine_zoom):
+                continue                                        # a reduced copy holds this level only inside its sample areas
             lid = "clim_annual" if "annual" in name else "et_" + name.split("_")[-1].split(".")[0]
+            if win:                                             # a window inside a sample area: the full set's numbers
+                r0, c0, h, w = map(int, win[0].split(","))
+                got = page.evaluate("""async ([id, z, x, y, r0, c0, h, w]) => { const dn = await window.__portal.getDN(id, z, x, y);
+                    if (!dn) return null; let s = 0, n = 0;
+                    for (let r = r0; r < r0 + h; r++) for (let c = c0; c < c0 + w; c++) { const v = dn[r * 256 + c]; s += v; if (v === 255) n++; }
+                    return {sum: s, n255: n}; }""", [lid, z, x, y, r0, c0, h, w])
+                check(got is not None and got["sum"] == exp["sum"] and got["n255"] == exp["n255"],
+                      f"tile {lid} {zxy}, a {h} x {w} px window at native zoom, holds the full set's numbers (sum {got and got['sum']} vs {exp['sum']})")
+                continue
             got = page.evaluate("""async ([id, z, x, y]) => { const dn = await window.__portal.getDN(id, z, x, y);
                 if (!dn) return null; let s = 0, n = 0; for (const v of dn) { s += v; if (v === 255) n++; }
                 return {sum: s, n255: n, px: [dn[10*256+10], dn[128*256+128], dn[50*256+200], dn[255*256+0]]}; }""", [lid, z, x, y])
             check(got is not None and got["sum"] == exp["sum"] and got["n255"] == exp["n255"] and got["px"] == exp["px"],
                   f"tile {lid} {zxy} decodes to the pipeline's numbers (sum {got and got['sum']} vs {exp['sum']})")
+
+    # the Peninsula button fits the region that has maps
+    page.click("#btnHome")
+    settle(2200)
+    v = view()
+    res = page.inner_text("#roRes")
+    check(4 < v["z"] < 8 and "km per pixel" in res, f"'Peninsula' fits the region (zoom {v['z']:.2f}, {res})")
+    if fine:
+        tags = page.evaluate("""() => [...document.querySelectorAll('.fine-tag')].map((t) => ({text: t.textContent, shown: getComputedStyle(t).display !== 'none'}))""")
+        check(len(tags) == len(fine) and all(t["shown"] and "30 m" in t["text"] for t in tags)
+              and page.evaluate("!!window.__portal.map.getLayer('fine-line')"),
+              f"sample areas are outlined and tagged on the map: {[t['text'] for t in tags]}")
+    page.screenshot(path=str(shots / "02_peninsula.png"))
 
     # hover: the readout shows a value in physical units
     box = page.locator("#map").bounding_box()
@@ -142,8 +210,7 @@ with sync_playwright() as pw:
     # click: zooms in and loads the pixel series
     z0 = page.evaluate("window.__portal.map.getZoom()")
     page.mouse.click(cx, cy)
-    page.wait_for_timeout(2600)
-    page.wait_for_function("window.__portal.map.areTilesLoaded()", timeout=60000)
+    settle(2600)
     z1 = page.evaluate("window.__portal.map.getZoom()")
     check(z1 > z0 + 1, f"click zooms in ({z0:.2f} -> {z1:.2f})")
     page.wait_for_function("!document.querySelector('#srSub').textContent.startsWith('Reading')", timeout=30000)
@@ -152,32 +219,77 @@ with sync_playwright() as pw:
     page.wait_for_function("document.querySelector('#rcSub').textContent.includes('had a clear observation')", timeout=120000)
     n_built = page.evaluate("window.__portal.L.size - 13")
     check(page.locator("#chartRecord svg path").count() == 1 and f"of {n_built} months" in page.inner_text("#rcSub"), "full record: " + page.inner_text("#rcSub"))
-    with page.expect_download() as dl:
-        page.click("#rcCsv")
-    csv_text = Path(dl.value.path()).read_text()
-    rows = [r for r in csv_text.splitlines() if r and not r.startswith("#")]
+
+    def record_csv():
+        with page.expect_download() as dl:
+            page.click("#rcCsv")
+        text = Path(dl.value.path()).read_text()
+        page.evaluate("window.scrollTo(0, 0)")          # clicking the CSV button scrolled the side panel into view
+        page.wait_for_timeout(200)
+        return text, [r for r in text.splitlines() if r and not r.startswith("#")]
+
+    csv_text, rows = record_csv()
     check(rows[0] == "month,et_mm_per_month,period,sensors" and len(rows) == n_built + 1 and all(len(r.split(",")) == 4 for r in rows),
           f"record CSV: {len(rows) - 1} rows, first {rows[1]!r}, last {rows[-1]!r}")
     head = csv_text.splitlines()[:2]
     check((" cell)" in head[0] and "mean over such a cell" in head[1]) if preview else ("(30 m pixel)" in head[0] and "cell" not in head[1]),
           f"record CSV names what a value stands for: {head[0][head[0].index('('):]}")
-    page.evaluate("window.scrollTo(0, 0)")          # clicking the CSV button scrolled the side panel into view
-    page.wait_for_timeout(200)
-    page.screenshot(path=str(shots / "02_after_click.png"))
+    page.screenshot(path=str(shots / "03_after_click.png"))
     page.mouse.click(cx, cy)
-    page.wait_for_timeout(2600)
-    page.wait_for_function("window.__portal.map.areTilesLoaded()", timeout=60000)
+    settle(2600)
     z2 = page.evaluate("window.__portal.map.getZoom()")
     if preview:
         check(abs(z2 - z1) < 0.05 and "finest here" in page.inner_text("#roRes") and page.text_content("#srKicker").endswith(" cell")
               and page.locator("#previewBadge").is_visible() and "Finest here" in page.text_content('#steps span[data-step="2"]')
-              and "public preview" in page.inner_text("#hint"),
+              and "public preview" in page.inner_text("#hint") and not note()["shown"],
               f"reduced copy: a second click stays at the finest level ({page.inner_text('#roRes')}); values are from a "
               f"{page.text_content('#srKicker')}; badge reads '{page.text_content('#previewBadge')}'")
+        # zooming past the finest level brings up the note that says where the detail is
+        page.evaluate("window.__portal.map.jumpTo({zoom: 10.6})")
+        settle(1200)
+        n = note()
+        check(n["kind"] == "finest" and n["shown"] and "finest level here" in n["text"] and "30 m" in n["text"] and len(n["buttons"]) == len(fine)
+              and (not info["paper"] or not fine or info["paper"] in n["text"]),
+              "past the finest level a note says so: " + " ".join(n["text"].split())[:260])
+        page.screenshot(path=str(shots / "04_finest_note.png"))
+        page.click("#znClose")
+        page.wait_for_timeout(200)
+        check(not note()["shown"], "the note closes")
+        if fine:
+            # a sample area: the note's button goes there, and there the copy is at the native 30 m
+            page.evaluate("window.__portal.map.jumpTo({zoom: 9.2})")        # leave the situation, so the closed note may come back
+            page.wait_for_timeout(400)
+            page.evaluate("window.__portal.map.jumpTo({zoom: 10.6})")
+            settle(900)
+            page.click("#znBtns button:first-child")
+            settle(3000)
+            v, f0 = view(), fine[0]
+            check(abs(v["z"] - (fine_zoom - 0.3)) < 0.05 and abs(v["lng"] - f0["center"][0]) < 0.01 and abs(v["lat"] - f0["center"][1]) < 0.01
+                  and "(native)" in page.inner_text("#roRes") and not note()["shown"]
+                  and page.evaluate("""(() => { const s = document.querySelector('#steps span[data-step="2"]'); return s.classList.contains('on') && s.textContent === 'Native 30 m'; })()"""),
+                  f"the note's button goes to {f0['name']}: zoom {v['z']:.2f}, {page.inner_text('#roRes')}")
+            page.mouse.click(*xy(*f0["center"]))
+            page.wait_for_timeout(600)
+            page.wait_for_function("!document.querySelector('#srSub').textContent.startsWith('Reading')", timeout=30000)
+            page.wait_for_function("document.querySelector('#rcSub').textContent.includes('had a clear observation')", timeout=120000)
+            csv_text, rows = record_csv()
+            head = csv_text.splitlines()[:2]
+            check(page.text_content("#srKicker") == "30 m pixel" and "(30 m pixel)" in head[0] and "cell" not in head[1] and len(rows) == n_built + 1,
+                  f"inside a sample area a clicked spot is a {page.text_content('#srKicker')} and its CSV says so: {head[0][head[0].index('('):]}")
+            page.screenshot(path=str(shots / "05_sample_area.png"))
+            # just outside the outline the copy is back to its own finest level
+            page.evaluate("([lng, lat]) => window.__portal.map.jumpTo({center: [lng + 0.09, lat], zoom: 11.7})", f0["center"])
+            settle(1200)
+            n = note()
+            check(n["kind"] == "finest" and n["shown"] and "finest here" in page.inner_text("#roRes"),
+                  f"outside the outline the note is back ({page.inner_text('#roRes')})")
+            page.evaluate("([lng, lat]) => window.__portal.map.jumpTo({center: [lng, lat], zoom: 9.2})", [v["lng"], v["lat"]])
+            settle(900)
     else:
-        check(z2 > 11 and "(native)" in page.inner_text("#roRes") and page.text_content("#srKicker") == "30 m pixel" and page.locator("#previewBadge").is_hidden(),
+        check(z2 > 11 and "(native)" in page.inner_text("#roRes") and page.text_content("#srKicker") == "30 m pixel" and page.locator("#previewBadge").is_hidden()
+              and not note()["shown"],
               f"second click reaches native resolution (zoom {z2:.2f}, {page.inner_text('#roRes')})")
-    page.screenshot(path=str(shots / "03_native.png"))
+    page.screenshot(path=str(shots / "06_native_or_finest.png"))
 
     # chart hover tooltip and the table twin
     sv = page.locator("#chart svg").bounding_box()
@@ -185,7 +297,7 @@ with sync_playwright() as pw:
         page.mouse.move(sv["x"] + sv["width"] * 0.55, sv["y"] + sv["height"] * 0.5)
         page.wait_for_timeout(200)
         check(page.locator("#tip").is_visible(), "chart tooltip: " + page.inner_text("#tip").replace("\n", " / "))
-        page.screenshot(path=str(shots / "04_chart_tip.png"), clip={"x": 1030, "y": 120, "width": 410, "height": 780})
+        page.screenshot(path=str(shots / "07_chart_tip.png"), clip={"x": 1030, "y": 120, "width": 410, "height": 780})
     page.click("#srTableBtn")
     check(page.locator("#srTable table tbody tr").count() == 12, "series table has 12 rows")
     page.click("#srTableBtn")
@@ -199,23 +311,23 @@ with sync_playwright() as pw:
 
     # single month + seasonal cycle modes
     page.click("#modeSeg button[data-mode=month]")
-    page.wait_for_timeout(1200)
-    page.wait_for_function("window.__portal.map.areTilesLoaded()", timeout=60000)
+    settle(1200)
     ym = page.evaluate("window.__portal.state.ym")                 # the default is the last July of the training period
     check(ym[:4] in page.inner_text("#lyTitle") and "GeoTIFF" in page.inner_text("#lySub"),
           "single-month layer: " + page.inner_text("#lyTitle") + " — " + page.inner_text("#lySub"))
     page.click("#btnHome")
-    page.wait_for_timeout(2200)
-    page.wait_for_function("window.__portal.map.areTilesLoaded()", timeout=60000)
-    page.screenshot(path=str(shots / "05_month_peninsula.png"))
+    settle(2200)
+    page.screenshot(path=str(shots / "08_month_peninsula.png"))
     page.click("#modeSeg button[data-mode=clim]")
     page.wait_for_timeout(900)
     check("mean" in page.inner_text("#lyTitle"), "seasonal-cycle layer: " + page.inner_text("#lyTitle"))
+    if bg and "clim_07" not in bg["layers"]:
+        off = page.evaluate("({vis: window.__portal.map.getLayoutProperty('ctx', 'visibility'), lg: document.querySelector('#lgBg').hidden})")
+        check(off["vis"] == "none" and off["lg"], "a layer the background has no counterpart for is shown without it")
 
     # globe: the view the page opens on, with the "available now" marker on the region
     page.click("#btnGlobe")
-    page.wait_for_timeout(2600)
-    page.wait_for_function("window.__portal.map.areTilesLoaded()", timeout=60000)
+    settle(2600)
     g = page.evaluate("""() => { const m = window.__portal.map;
         return {zoom: m.getZoom(), proj: JSON.stringify(m.getProjection ? m.getProjection() : null), land: !!m.getLayer('land'),
                 well: getComputedStyle(document.querySelector('.mapwrap')).backgroundColor}; }""")
@@ -227,45 +339,76 @@ with sync_playwright() as pw:
                 shown: getComputedStyle(document.querySelector('.pulse').parentElement).display !== 'none'}; }""")
     check(mk["shown"] and abs(mk["dx"]) < 12 and abs(mk["dy"]) < 12 and mk["labelLeft"] > 0 and mk["labelRight"] < mk["w"],
           f"'available now' marker sits on the peninsula and its label is inside the map (offset {mk['dx']:.0f}, {mk['dy']:.0f} px)")
-    page.screenshot(path=str(shots / "06_globe.png"))
+    page.screenshot(path=str(shots / "09_globe_seasonal.png"))
     # zoomed all the way out, the map asks for tiles coarser than the archive holds; they are averaged in the browser
     page.evaluate("window.__portal.map.jumpTo({zoom: 1.2})")
-    page.wait_for_timeout(1500)
-    page.wait_for_function("window.__portal.map.areTilesLoaded()", timeout=60000)
-    w = page.evaluate("""() => { const p = window.__portal, lid = [...p.dnCache.keys()].filter((k) => +k.split('/')[1] < 3);
+    settle(1500)
+    w = page.evaluate("""() => { const p = window.__portal, lid = [...p.dnCache.keys()].filter((k) => !k.startsWith('bg_') && +k.split('/')[1] < 3);
         const dn = lid.length ? p.dnCache.get(lid[lid.length - 1]) : null; let n = 0; if (dn) for (const v of dn) if (v !== 255) n++;
         return {zoom: p.map.getZoom(), coarse: lid.length, valid: n}; }""")
     check(w["coarse"] > 0 and w["valid"] > 20, f"far out (zoom {w['zoom']:.2f}): {w['coarse']} coarse tile(s) built in the browser with {w['valid']} coloured px")
-    page.evaluate("window.__portal.map.jumpTo({center: [5, 46], zoom: 2.2})")
-    page.wait_for_timeout(1200)
-    pt = page.evaluate("(() => { const p = window.__portal.map.project([2.35, 46.5]); return [p.x, p.y]; })()")
-    page.mouse.click(box["x"] + pt[0], box["y"] + pt[1])
+    page.click("#modeSeg button[data-mode=annual]")
+    settle(1200)
+
+    # outside the region with maps: a click moves in on the place, twice; there a note says what is published,
+    # and the next click offers to request the place
+    place = (78.5, 22.5)                                          # central India
+    page.evaluate("window.__portal.map.jumpTo({center: [60, 25], zoom: 1.7})")
+    settle(1200)
+    page.mouse.click(*xy(*place))
+    settle(2000)
+    v1 = view()
+    page.mouse.click(*xy(*place))
+    settle(2400)
+    v2, n = view(), note()
+    check(abs(v1["z"] - 4.6) < 0.05 and 7.3 <= v2["z"] <= 8.5 and abs(v2["lng"] - place[0]) < 0.3 and abs(v2["lat"] - place[1]) < 0.3
+          and page.locator(".maplibregl-popup").count() == 0,
+          f"outside Korea two clicks move in on the place (zoom {v1['z']:.2f}, then {v2['z']:.2f})")
+    check(n["kind"] == "outside" and n["shown"] and "Korean Peninsula" in n["text"] and "on request" in n["text"] and len(n["buttons"]) == 2
+          and (not bg or (bg["name"] in n["text"] and "not Prithvi-OpenET-Tower" in n["text"])) and (not info["paper"] or info["paper"] in n["text"])
+          and page.evaluate("getComputedStyle(document.querySelector('#steps')).visibility") == "hidden",
+          "there a note says what is published: " + " ".join(n["text"].split())[:330])
+    if bg:
+        page.mouse.move(*xy(*place))
+        page.wait_for_timeout(400)
+        check(page.inner_text("#roVal").startswith(bg["name"] + ":") and "Background" in page.inner_text("#roRes"),
+              f"readout there: {page.inner_text('#roRes')} | {page.inner_text('#roVal')}")
+    page.screenshot(path=str(shots / "10_outside_note.png"))
+    page.mouse.click(*xy(*place))
     page.wait_for_timeout(700)
-    check(page.locator(".maplibregl-popup .pop").count() == 1, "click outside Korea offers an on-demand request")
-    page.screenshot(path=str(shots / "07_demand_popup.png"))
+    check(page.locator(".maplibregl-popup .pop").count() == 1, "the next click offers an on-demand request")
+    page.screenshot(path=str(shots / "11_demand_popup.png"))
     page.click(".maplibregl-popup .pop button")
     page.wait_for_timeout(300)
     west = float(page.input_value("#rqForm [name=w]") or "nan")
-    check(page.locator("#tab-request").is_visible() and abs(west - 1.85) < 0.5,
+    check(page.locator("#tab-request").is_visible() and abs(west - (place[0] - 0.5)) < 0.5,
           f"request tab opens with the box prefilled around the click (W={west})")
     page.fill("#rqForm [name=name]", "Test Person")
     page.fill("#rqForm [name=org]", "Test Institute")
     page.fill("#rqForm [name=email]", "test@example.org")
-    page.fill("#rqForm [name=region]", "Central France")
+    page.fill("#rqForm [name=region]", "Central India")
     page.fill("#rqForm [name=from]", "2019-01")
     page.fill("#rqForm [name=to]", "2020-12")
     page.fill("#rqForm [name=use]", "Smoke test only.")
-    page.screenshot(path=str(shots / "08_request.png"), full_page=True)
+    page.screenshot(path=str(shots / "12_request.png"), full_page=True)
     page.click("#rqCopy")
     page.wait_for_timeout(200)
     check(page.locator("#rqError").is_hidden(), "request form validates: " + page.inner_text("#rqArea"))
+    # the note's own buttons: back to the region with maps
+    page.click(".tab[data-tab=explore]")
+    page.wait_for_timeout(400)
+    page.keyboard.press("Escape")
+    page.click("#znBtns button:first-child")
+    settle(2400)
+    v = view()
+    check(4 < v["z"] < 8 and abs(v["lng"] - 128.1) < 1.5 and not note()["shown"], f"the note's button goes to the Korean Peninsula (zoom {v['z']:.2f})")
 
     cta = page.evaluate("""() => { const b = document.querySelector('.tab-cta'), s = getComputedStyle(b);
         return {bg: s.backgroundColor, color: s.color, radius: s.borderTopLeftRadius, anim: s.animationName}; }""")
     # filled pill (a darker fill while its own tab is open), white text, animated unless the visitor asked for less motion
     check(cta["bg"] in ("rgb(184, 84, 52)", "rgb(156, 74, 47)") and cta["color"] == "rgb(255, 255, 255)" and cta["radius"] == "999px"
           and cta["anim"] != "none", f"request button stands out: {cta}")
-    for tab, shot in (("download", "09_download.png"), ("code", "10_code.png"), ("about", "11_about.png")):
+    for tab, shot in (("download", "13_download.png"), ("code", "14_code.png"), ("about", "15_about.png")):
         page.click(f".tab[data-tab={tab}]")
         page.wait_for_timeout(250)
         page.screenshot(path=str(shots / shot), full_page=True)
@@ -273,6 +416,12 @@ with sync_playwright() as pw:
         const a = r('#tab-about .prose'), s = r('.about-side'), w = document.documentElement.clientWidth;
         return {left: a.left, right: w - s.right, gap: s.left - a.right, sideTop: s.top - a.top}; }""")
     check(abs(ab["left"] - ab["right"]) < 40 and 20 < ab["gap"] < 80, f"About: article and facts column centred as a pair (margins {ab['left']:.0f}/{ab['right']:.0f} px, gap {ab['gap']:.0f} px)")
+    if bg:
+        t = page.inner_text("#abBg")
+        check(page.locator("#abBg").is_visible() and "background layer" in t and "has not been run" in t and bg["name"] in page.inner_text("#abCredits"),
+              "About says what the background is: " + t[:150] + "…")
+    if info["paper"]:
+        check(page.inner_text("#abPaper") == f"Manuscript {info['paper']}.", "citation gives the paper's status: " + page.inner_text("#abPaper"))
     y0 = page.evaluate("window.scrollY")
     page.click(".toc a[href='#ab-read']")
     page.wait_for_timeout(900)
@@ -286,7 +435,7 @@ with sync_playwright() as pw:
     page.set_viewport_size({"width": 430, "height": 860})
     page.click(".tab[data-tab=explore]")
     page.wait_for_timeout(1500)
-    page.screenshot(path=str(shots / "12_phone.png"), full_page=True)
+    page.screenshot(path=str(shots / "16_phone.png"), full_page=True)
     over = page.evaluate("document.documentElement.scrollWidth - document.documentElement.clientWidth")
     check(over <= 1, f"no horizontal overflow at 430 px (overflow {over}px)")
 
@@ -312,7 +461,7 @@ with sync_playwright() as pw:
 
     p2.route("**/js/config.js*", with_endpoint)
     p2.route("https://requests.example.test/**", endpoint)
-    p2.goto(a.base + sep + "intro=0&tab=request&hidefooter=1", wait_until="domcontentloaded")
+    p2.goto(a.base + sep + "view=region&tab=request&hidefooter=1", wait_until="domcontentloaded")
     p2.wait_for_function("window.__portal && window.__portal.map", timeout=60000)
     check(p2.locator(".logos-footer").is_hidden(), "hidefooter=1 hides the logo strip (a page that embeds the portal draws its own)")
     check(p2.inner_text("#rqSend") == "Send request" and p2.locator("#rqMail").is_visible(), "with an endpoint the button reads: " + p2.inner_text("#rqSend"))
@@ -330,12 +479,17 @@ with sync_playwright() as pw:
           and d.get("to") == "2020-12" and d.get("website") == "" and d.get("elapsed_ms", 0) > 0 and d.get("region") == "Mekong Delta",
           f"form posted as JSON: {json.dumps(d)[:230]}")
     check("test@example.org" in p2.inner_text("#rqDone") and p2.input_value("#rqForm [name=name]") == "", "success message shown and the form cleared: " + p2.inner_text("#rqDone"))
-    p2.screenshot(path=str(shots / "13_request_sent.png"), full_page=True)
+    p2.screenshot(path=str(shots / "17_request_sent.png"), full_page=True)
     fill()
     p2.click("#rqSend")
     p2.wait_for_selector("#rqError:not([hidden])", timeout=15000)
     check("email draft" in p2.inner_text("#rqError") and p2.input_value("#rqForm [name=name]") == "Test Person" and p2.locator("#rqDone").is_hidden(),
           "delivery failure keeps the form and points to the draft: " + p2.inner_text("#rqError"))
+    # view=region asks for the region with maps instead of the globe; the page was opened on another tab, so the fit waited
+    p2.click(".tab[data-tab=explore]")
+    p2.wait_for_timeout(1200)
+    zr = p2.evaluate("window.__portal.map.getZoom()")
+    check(4 < zr < 8, f"view=region opens on the region with maps instead of the globe (zoom {zr:.2f})")
     p2.close()
 
     errs = [c for c in console if c[0] in ("error", "pageerror")]

@@ -10,7 +10,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600&family=Source+Serif+4:opsz,wght@8..60,500;8..60,600&display=swap" />
 <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5.24.1/dist/maplibre-gl.css" />
-<link rel="stylesheet" href="css/portal.css?v=20261115k" />
+<link rel="stylesheet" href="css/portal.css?v=20261115m" />
 </head>
 <body>
 
@@ -93,6 +93,16 @@
           <div class="lg-bar" id="lgBar"></div>
           <div class="lg-ticks" id="lgTicks"></div>
           <p class="lg-note"><span class="sw sw-nodata"></span>No clear-sky observation that month</p>
+          <!-- shown while a background layer from another product fills the rest of the globe -->
+          <p class="lg-note lg-bg" id="lgBg" hidden></p>
+        </div>
+
+        <!-- A note when the view has gone past what is published at that place (updateNote in app.js). -->
+        <div class="map-ui zoomnote" id="zoomNote" role="status" hidden>
+          <button class="zn-x" id="znClose" aria-label="Close this note" title="Close">×</button>
+          <p class="zn-h" id="znHead"></p>
+          <p class="zn-t" id="znText"></p>
+          <div class="zn-b" id="znBtns"></div>
         </div>
 
         <div class="map-ui map-br readout" id="readout" aria-live="off">
@@ -104,7 +114,7 @@
           <span data-step="0">Overview</span><span data-step="1">Regional</span><span data-step="2">Native 30 m</span>
         </div>
       </div>
-      <p class="hint" id="hint">Click anywhere on the peninsula: the map zooms in two steps, from the coarse overview to a regional view (about 120 m per pixel) and then to the native 30 m, and the panel on the right shows the monthly series at that pixel.</p>
+      <p class="hint" id="hint">Click the Korean Peninsula: the map zooms in two steps, from the coarse overview to a regional view (about 120 m per pixel) and then to the native 30 m, and the panel on the right shows the monthly series at that pixel.</p>
     </div>
 
     <aside class="side">
@@ -247,6 +257,7 @@
     <h3 id="ab-read">Read this before you use the numbers</h3>
     <ul>
       <li id="abPreview" hidden></li>
+      <li id="abBg" hidden></li>
       <li><b>Training period.</b> The model was trained on 2016–2024. Months before 2016 and after 2024 are extrapolations in time and are marked as such on this site and in each file.</li>
       <li><b>Gaps.</b> Empty pixels are common in the summer monsoon and in 2013–2015, when only Landsat was available. A regional mean covers only the pixels that were observed, so read it together with the share of land observed.</li>
       <li><b>30 m is the grid, not the accuracy.</b> Accuracy at single pixels and single fields has not been verified, and many Korean fields are smaller than a pixel.</li>
@@ -259,10 +270,10 @@
     <p id="abDemand"></p>
 
     <h3 id="ab-cite">Citation</h3>
-    <p class="cite">Choi, E., Kim, S., and Kim, H. Prithvi-OpenET: Geospatial Foundation Model-Based 30 m Monthly Evapotranspiration Estimation beyond the Conterminous United States with Landsat and Sentinel-2 Imagery. Manuscript in preparation.</p>
+    <p class="cite">Choi, E., Kim, S., and Kim, H. Prithvi-OpenET: Geospatial Foundation Model-Based 30 m Monthly Evapotranspiration Estimation beyond the Conterminous United States with Landsat and Sentinel-2 Imagery. <span id="abPaper">Manuscript in preparation.</span></p>
 
     <h3 id="ab-credits">Sources and credits</h3>
-    <p>HLS v2.0 (NASA), MERRA-2 (NASA GMAO), OpenET, Prithvi-EO-2.0 (IBM and NASA), FLUXNET, Copernicus GLO-30, MERIT Hydro, SoilGrids 2.0, CGIAR Global Aridity Index. The land mask is derived from OpenStreetMap, © OpenStreetMap contributors (ODbL). Background imagery © Esri and its data providers.</p>
+    <p id="abCredits">HLS v2.0 (NASA), MERRA-2 (NASA GMAO), OpenET, Prithvi-EO-2.0 (IBM and NASA), FLUXNET, Copernicus GLO-30, MERIT Hydro, SoilGrids 2.0, CGIAR Global Aridity Index. The land mask is derived from OpenStreetMap, © OpenStreetMap contributors (ODbL). Satellite imagery © Esri and its data providers.</p>
     <p>Contact: HydroAI Lab, Gwangju Institute of Science and Technology — <a id="abMail"></a></p>
   </article>
   <aside class="about-side">
@@ -327,7 +338,7 @@
           <label>East <input name="e" type="number" step="0.01" min="-180" max="180" required /></label>
           <label>North <input name="n" type="number" step="0.01" min="-90" max="90" required /></label>
         </div>
-        <p class="form-hint" id="rqArea">Longitude and latitude in degrees. Tip: click anywhere outside Korea on the map, then “Request this area”.</p>
+        <p class="form-hint" id="rqArea">Longitude and latitude in degrees. Tip: on the map, zoom in on a place outside Korea and choose “Request this area”.</p>
       </fieldset>
 
       <fieldset>
@@ -377,7 +388,7 @@
 
 <script src="https://unpkg.com/maplibre-gl@5.24.1/dist/maplibre-gl.js"></script>
 <script src="https://unpkg.com/pmtiles@4.5.0/dist/pmtiles.js"></script>
-<script src="js/config.js?v=20261115k"></script>
-<script src="js/app.js?v=20261115l"></script>
+<script src="js/config.js?v=20261115m"></script>
+<script src="js/app.js?v=20261115m"></script>
 </body>
 </html>
