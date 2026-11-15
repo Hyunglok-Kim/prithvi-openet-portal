@@ -214,6 +214,22 @@ with sync_playwright() as pw:
               and go == [f["name"] for f in fine],
               f"sample areas: {len(far)} small squares on the peninsula view, a line in the coverage card ('{cov['text'].strip()}'), all in the 'Go to' list")
         page.screenshot(path=str(shots / "02_peninsula.png"))
+        # a click just beside a square is meant for the area, and so is a click inside the outline at the regional view
+        x, y = xy(*fine[1]["center"])
+        page.mouse.click(x + 7, y + 5)
+        settle(3000)
+        v = view()
+        check(v["z"] >= fine_zoom + 0.55 and abs(v["lng"] - fine[1]["center"][0]) < 0.04 and abs(v["lat"] - fine[1]["center"][1]) < 0.04
+              and "(native)" in page.inner_text("#roRes"),
+              f"a click beside a square goes to {fine[1]['name']} (zoom {v['z']:.2f}, {page.inner_text('#roRes')})")
+        page.evaluate("([lng, lat]) => window.__portal.map.jumpTo({center: [lng, lat], zoom: 9.2})", fine[2]["center"])
+        settle(1200)
+        hint = page.inner_text("#roRes")
+        page.mouse.click(*xy(*fine[2]["center"]))
+        settle(3000)
+        v = view()
+        check("zoom in for 30 m" in hint and v["z"] >= fine_zoom + 0.55 and abs(v["lng"] - fine[2]["center"][0]) < 0.04 and "(native)" in page.inner_text("#roRes"),
+              f"at the regional view the readout says '{hint}', and a click inside the outline goes to {fine[2]['name']} (zoom {v['z']:.2f})")
         page.evaluate("([lng, lat]) => window.__portal.map.jumpTo({center: [lng, lat], zoom: 7.6})", fine[0]["center"])
         settle(900)
         near = tags()
@@ -294,10 +310,11 @@ with sync_playwright() as pw:
             page.click("#znBtns button:first-child")
             settle(3000)
             v, f0 = view(), by_dist[0]
-            check(abs(v["z"] - (fine_zoom - 0.3)) < 0.05 and abs(v["lng"] - f0["center"][0]) < 0.01 and abs(v["lat"] - f0["center"][1]) < 0.01
+            px = 2 ** (v["z"] - (fine_zoom - 1))                    # screen pixels per native pixel
+            check(fine_zoom + 0.55 <= v["z"] <= fine_zoom + 1.55 and px >= 2.9 and abs(v["lng"] - f0["center"][0]) < 0.04 and abs(v["lat"] - f0["center"][1]) < 0.04
                   and "(native)" in page.inner_text("#roRes") and not note()["shown"]
                   and page.evaluate("""(() => { const s = document.querySelector('#steps span[data-step="2"]'); return s.classList.contains('on') && s.textContent === 'Native 30 m'; })()"""),
-                  f"the note's button goes to {f0['name']}: zoom {v['z']:.2f}, {page.inner_text('#roRes')}")
+                  f"the note's button goes to {f0['name']} with its pixels in view: zoom {v['z']:.2f}, {px:.1f} screen px per pixel, {page.inner_text('#roRes')}")
             page.mouse.click(*xy(*f0["center"]))
             page.wait_for_timeout(600)
             page.wait_for_function("!document.querySelector('#srSub').textContent.startsWith('Reading')", timeout=30000)

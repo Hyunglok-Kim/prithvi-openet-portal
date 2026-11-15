@@ -216,6 +216,11 @@ python pipeline/make_preview_copy.py --src /path/to/out --out /path/to/public \
   an area is an outline with a name tag; far out, where the tags would pile up, each is a small
   square, explained by a line in the coverage card. The areas are also in the "Go to" list. Only
   the maps are shown: nothing from the tower records, and no tower positions.
+- **Going to a sample area shows its pixels** (`goFine`): the tag, the "Go to" list, the note's
+  buttons, a click on or just beside a square, or a click inside the outline at the regional view
+  all fill the map with the area, at 3 screen pixels per native pixel or more (map zoom 12.6 to
+  13.5; on a small map the area runs past the edges). At the regional view the readout over an
+  area reads "120 m per pixel · zoom in for 30 m".
 - Adding the sample areas or the background does not change the 173 archives and their sidecars
   (the copy is deterministic), so a repository only gains files.
 - After rebuilding tiles: run the script again into the same parent folder, then commit and push
@@ -377,6 +382,12 @@ Left:
 - **The land outline runs out to sea.** Natural Earth 1:50m is generalised, by up to a few km on
   the Korean east coast. Masking the background with it alone left a coloured fringe along our own
   coast, hence the margin around our maps in `make_background.py`.
+- **A 30 m area looked like 120 m.** Landing on an area at map zoom 11.7 puts 1.6 screen pixels
+  on each native pixel. At that size the pixel grid cannot be seen and the thin features (field
+  edges, roads, streams) are a pixel or two wide, so the area was hard to tell from the 120 m
+  cells around it, on a large high-density screen most of all. The tiles were right (they were
+  compared with the native grid); the view was too far out. Hence `goFine` goes in to at least
+  3 screen pixels per native pixel.
 - **`tileZoom()` is capped at the source's top zoom, not the copy's.** With sample areas the source
   goes to zoom 12 while most of the map is zoom-10 cells enlarged; what the numbers stand for at a
   place is `topZoomAt()`, and every label asks that.

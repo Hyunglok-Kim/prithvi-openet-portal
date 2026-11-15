@@ -498,9 +498,22 @@ function addFineAreas() {
   row.hidden = false;
   onZoom();
 }
+/* Going to a sample area means seeing its pixels. At 1–2 screen pixels per native pixel an area is hard
+   to tell from the 120 m cells around it; from about 3 screen pixels on, the grid and the thin features
+   (field edges, roads, streams) show. So: fill the map with the area where that gives at least 3 screen
+   pixels per pixel (a large screen), otherwise go in to 3 and let the area run past the edges. */
 function goFine(a) {
   if (popup) { popup.remove(); popup = null; }
-  map.flyTo({ center: a.center, zoom: FINE_ZOOM - 0.3, duration: 1800 });
+  const box = map.getContainer(), wide = box.clientWidth >= 900;
+  const fit = map.cameraForBounds([[a.bounds[0], a.bounds[1]], [a.bounds[2], a.bounds[3]]],
+    { padding: { top: 64, bottom: 56, left: wide ? 290 : 24, right: wide ? 40 : 24 } });      // clear of the controls and, where there is room, the legend
+  const zMin = FINE_ZOOM + 0.6, zMax = FINE_ZOOM + 1.5;                                        // 3 to 5.7 screen px per native pixel
+  if (fit && fit.zoom >= zMin) map.flyTo({ center: fit.center, zoom: Math.min(fit.zoom, zMax), duration: 1800 });
+  else map.flyTo({ center: a.center, zoom: zMin, duration: 1800 });
+}
+/* A sample area a click was meant for: far out they are squares a few pixels wide, so a near miss counts. */
+function fineNear(point) {
+  return FINE.find((a) => { const p = map.project(a.center); return Math.hypot(p.x - point.x, p.y - point.y) <= 12; }) || null;
 }
 let cityMarkers = [], pulse = null;
 function addMarkers() {
@@ -538,7 +551,7 @@ function updateView() {
   document.querySelectorAll("#steps span").forEach((s) => s.classList.toggle("on", ours && +s.dataset.step === step));
   if (!fullRes()) document.querySelector('#steps span[data-step="2"]').textContent = native ? "Native 30 m" : `Finest here · ${finestRes()}`;
   $("#roRes").textContent = z < 2.6 ? "Click or scroll to zoom in"
-    : ours ? `${fmtRes(groundRes(zd, c.lat))} per pixel${zd === top ? (native ? " (native)" : " (finest here)") : ""}`
+    : ours ? `${fmtRes(groundRes(zd, c.lat))} per pixel${zd === top ? (native ? " (native)" : " (finest here)") : (FINE.length && native && zd >= CAT.zoom.max ? " · zoom in for 30 m" : "")}`
     : currentBg() ? `Background, ${fmt(BG.cell_km)} km cells` : "No ready-made maps here";
   updateNote();
 }
@@ -577,6 +590,10 @@ function onClick(e) {
     else demandPopup(e.lngLat);
     return;
   }
+  /* A sample area of a reduced copy: a click on its square (or just beside it) far out, or inside its
+     outline at the regional view, goes to the area itself. No spot is picked: the click was for the area. */
+  const area = z < 8 ? fineNear(e.point) : z < FINE_ZOOM + 0.5 ? fineAreaAt(lng, lat) : null;
+  if (area && z < 10.8) { goFine(area); return; }
   if (z < 8) map.flyTo({ center: [lng, lat], zoom: zRegional(), duration: 1500 });
   else if (nativeAt(lng, lat) && z < 10.8) map.flyTo({ center: [lng, lat], zoom: (CAT.zoom.native || CAT.zoom.max) - 0.3, duration: 1500 });      // on to the native grid, where the copy has it
   pickLocation(lng, lat);
