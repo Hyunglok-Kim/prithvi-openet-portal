@@ -11,9 +11,10 @@ before changing anything.
 **Status (November 2026): public preview.** The portal is live on GitHub Pages
 (https://hyunglok-kim.github.io/prithvi-openet-portal/) and embedded on https://hydroai.net/data#et.
 The public site reads a **reduced copy** of the browse tiles — zoom 3–10, about 120 m, plus the
-native 30 m inside two small areas that the paper itself shows — from three tile repositories,
-because GitHub Pages cannot hold the full 17.6 GB set and because the full 30 m maps are released
-with the paper; the full set is served only inside the lab. The GeoTIFFs are not published. The
+native 30 m inside eight small areas around the paper's Korean flux-tower sites — from three tile
+repositories, because GitHub Pages cannot hold the full 17.6 GB set and because the full 30 m maps
+are released after the paper is accepted; the full set is served only inside the lab. A line at
+the top of the page says so. The GeoTIFFs are not published. The
 request backend (`worker/`) is deployed and connected. Lab-internal operations (storage paths, how
 the lab hosts its own copy) are documented outside this repository.
 
@@ -122,12 +123,17 @@ When the view has gone past what is published at a place, a note appears at the 
   Peninsula has detailed maps for now, what is on screen is the background, other regions are
   produced on request; buttons go to the peninsula or to the request form, filled in for the place.
 - **finest** — zoomed past the finest level of a reduced copy, outside its sample areas: 120 m is
-  the finest level here for now, the native 30 m is shown only for the areas presented in the
-  paper; buttons go to those areas.
+  the finest level here for now, the native 30 m is shown only in the sample areas (the catalog's
+  `fine.what` says what they are); buttons go to the three nearest.
 
 `paperStatus` in `js/config.js` ("under review") supplies the clause "While the paper is …" and the
 status in the citation. Empty it at publication. The sentences are written so that each is true as
 it stands: they say what is published, not that more exists somewhere.
+
+**The line at the top of the page.** `notice` in `js/config.js` is one sentence shown above
+everything, on every tab: the paper is under review, the data will be released after it is
+accepted, and what is on the page is a preview. Empty it and the line is gone. The lab's internal
+copy (opened with `nas=`) does not show it: that copy is not a preview and says so itself.
 
 ## Building tiles
 
@@ -173,18 +179,18 @@ python pipeline/make_coverage_map.py \
 ## The reduced public copy
 
 GitHub Pages serves a site of at most 1 GB and files under 100 MB; the full tile set is 17.6 GB,
-and the full 30 m maps are released with the paper, not before. Until then the public site reads a
-copy cut off at zoom 10, with the native zoom kept in a few small areas:
+and the full 30 m maps are released after the paper is accepted, not before. Until then the public
+site reads a copy cut off at zoom 10, with the native zoom kept in a few small areas:
 
 ```bash
 python pipeline/make_preview_copy.py --src /path/to/out --out /path/to/public \
     --max-zoom 10 --volume-mb 600 --name prithvi-openet-tiles \
-    --fine pipeline/preview_fine_areas.geojson          # needs pmtiles, numpy, Pillow; under a minute
+    --fine pipeline/preview_fine_areas.geojson          # needs pmtiles, numpy, Pillow; about two minutes
 ```
 
 - Tile bytes are copied untouched, so at zoom 3–10 the copy holds exactly the full set's numbers.
   Zoom 10 is about 120 m; a value there is the mean of the valid 30 m pixels in the cell.
-- The copy is 1.72 GB, spread over three folders of about 600 MB. Each folder is one repository
+- The copy is 1.76 GB, spread over three folders of 530–630 MB. Each folder is one repository
   with Pages on: `prithvi-openet-tiles-1` (catalog, climatology, first months, the background
   layer), `-2`, `-3`. The catalog addresses the other two as `../prithvi-openet-tiles-2/monthly/…`,
   which works because the sites are neighbours on one host. `js/config.js` `dataBase` points at
@@ -195,16 +201,21 @@ python pipeline/make_preview_copy.py --src /path/to/out --out /path/to/public \
   "120 m cell" instead of "30 m pixel" on the series, the CSV header, the About and Code text. A
   catalog without `zoom.native` is a full set and the page then goes down to 30 m.
 - **Sample areas (`--fine`).** `preview_fine_areas.geojson` holds the outlines of the areas that
-  keep the native zoom: the two Korean scenes the paper shows (Cheorwon and Anmyeon, each the
-  6.72 km input chip of that scene). For those, every layer gets a second small archive beside the
-  first, `X.fine.pmtiles`, with the zoom 11–12 tiles that touch an area (2,011 tiles, 14 MB in
-  all). Inside an outline a tile holds the full set's pixels; outside it, the copy's own zoom-10
-  cells enlarged — so nothing finer than 120 m leaves the outlines. The catalog lists the areas
-  under `fine` and each layer names its archive under `fine`. In the app the ET source then goes
-  to zoom 12: tiles that touch an area come from the second archive, all others are made in the
-  browser by enlarging zoom 10 (`finerDN`), which gives the same pixels. What a value stands for
-  depends on where it was read (`nativeAt`, `cellNameAt`): a 30 m pixel inside an area, a 120 m
-  cell anywhere else. The areas are outlined and tagged on the map.
+  keep the native zoom: the eight Korean flux-tower sites of the paper's tower network, each the
+  6.72 km input chip around one site (Cheorwon, Anmyeon, Paju, Hongcheon, Pyeongchang, Samcheok,
+  Yeoju, Wando; the first two are also the Korean scenes the paper shows as maps). Its `what` is a
+  few words on what the areas are, which the app puts into its sentences. For those areas, every
+  layer gets a second small archive beside the first, `X.fine.pmtiles`, with the zoom 11–12 tiles
+  that touch an area (7,376 tiles, 60 MB in all, about 7 MB an area). Inside an outline a tile
+  holds the full set's pixels; outside it, the copy's own zoom-10 cells enlarged — so nothing
+  finer than 120 m leaves the outlines. The catalog lists the areas under `fine` and each layer
+  names its archive under `fine`. In the app the ET source then goes to zoom 12: tiles that touch
+  an area come from the second archive, all others are made in the browser by enlarging zoom 10
+  (`finerDN`), which gives the same pixels. What a value stands for depends on where it was read
+  (`nativeAt`, `cellNameAt`): a 30 m pixel inside an area, a 120 m cell anywhere else. On the map
+  an area is an outline with a name tag; far out, where the tags would pile up, each is a small
+  square, explained by a line in the coverage card. The areas are also in the "Go to" list. Only
+  the maps are shown: nothing from the tower records, and no tower positions.
 - Adding the sample areas or the background does not change the 173 archives and their sidecars
   (the copy is deterministic), so a repository only gains files.
 - After rebuilding tiles: run the script again into the same parent folder, then commit and push
@@ -292,8 +303,8 @@ Left:
    and the sample areas go away by themselves, because a full set has neither.
 2. **The GeoTIFFs.** Public address with a DOI, then `cogBase` in `js/config.js`: the Download tab
    shows direct links and the code examples use them.
-3. **At publication:** empty `paperStatus` in `js/config.js` and write the reference into the
-   citation in the About tab; a licence for this repository.
+3. **At publication:** empty `paperStatus` and `notice` in `js/config.js` and write the reference
+   into the citation in the About tab; a licence for this repository.
 4. **Other regions.** The app assumes one region with maps (`CAT.bounds`). When a second region is
    produced, the catalog, the coverage test (`inBounds`) and the notes need to learn about several.
 
@@ -306,9 +317,11 @@ Left:
 - **The background is never passed off as ours.** It is another product, shown for context, named
   wherever a value from it appears, hidden wherever our maps are, and never offered as data. The
   notes on the map say what is published; they do not suggest that maps exist where none do.
-- **Ahead of the paper, 30 m only where the paper shows it.** A public copy of the tiles holds
-  nothing finer than 120 m outside the outlines in `pipeline/preview_fine_areas.geojson`. The
-  sample-area tiles are built so that this is true pixel by pixel; keep it that way.
+- **Ahead of the paper, 30 m only in the sample areas.** A public copy of the tiles holds nothing
+  finer than 120 m outside the outlines in `pipeline/preview_fine_areas.geojson` — today the
+  paper's eight Korean flux-tower sites. The sample-area tiles are built so that this is true
+  pixel by pixel; keep it that way. Which areas go in is the lab head's decision, not a
+  convenience.
 - **Flag extrapolation.** The model was trained on 2016–2024; months outside are marked in the layer
   card, the record calendar, the pixel chart, the Download table and the CSV.
 - **Never hide gaps.** A regional mean is a mean over observed pixels, so it is always shown next

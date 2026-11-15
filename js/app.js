@@ -19,7 +19,7 @@
 
 /* ───────────────────────────── configuration ───────────────────────────── */
 const CFG = Object.assign({ dataBase: "./data/", cogBase: "", requestEmail: "", requestEndpoint: "", demandFirstMonth: "2013-04",
-                            demandLagMonths: 3, nasPath: "", paperStatus: "" }, window.PORTAL_CONFIG || {});
+                            demandLagMonths: 3, nasPath: "", paperStatus: "", notice: "" }, window.PORTAL_CONFIG || {});
 const Q = new URLSearchParams(location.search);
 {
   const d = Q.get("data");                       // same-origin absolute path only
@@ -81,7 +81,7 @@ function niceCeil(v) {
   const p = Math.pow(10, Math.floor(Math.log10(v || 1))), n = v / p;
   return (n <= 1 ? 1 : n <= 2 ? 2 : n <= 2.5 ? 2.5 : n <= 5 ? 5 : 10) * p;
 }
-const numWord = (n) => ["no", "one", "two", "three", "four", "five", "six"][n] || String(n);
+const numWord = (n) => ["no", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve"][n] || String(n);
 /* Is the point inside the ring (an array of [lng, lat])? Even-odd rule. */
 function inRing(ring, lng, lat) {
   let c = false;
@@ -132,7 +132,7 @@ let CAT = null, map = null, landGeo = null, popup = null, pickMarker = null;
 const L = new Map();                 // layer id → layer record
 let BG = null;                       // the background product (catalog.background), or null
 const BGL = new Map();               // background layer id → record
-let FINE = [], FINE_ZOOM = 0;        // areas a reduced copy keeps at the native zoom (catalog.fine), and that zoom
+let FINE = [], FINE_ZOOM = 0, FINE_WHAT = "";      // areas a reduced copy keeps at the native zoom (catalog.fine), that zoom, and what the areas are
 const state = { mode: "annual", ym: null, climMonth: 7, scale: "fixed", opacity: 1, pick: null,
                 seriesYear: null, playing: null };
 const lut32 = new Uint32Array(256), lutBg = new Uint32Array(256);
@@ -347,7 +347,7 @@ async function loadCatalog() {
     BG = CAT.background;
     for (const ly of Object.values(BG.layers)) BGL.set(ly.id, { ...ly, kind: "bg" });
   }
-  if (CAT.fine && (CAT.fine.areas || []).length && CAT.fine.zoom > CAT.zoom.max) { FINE = CAT.fine.areas; FINE_ZOOM = CAT.fine.zoom; }
+  if (CAT.fine && (CAT.fine.areas || []).length && CAT.fine.zoom > CAT.zoom.max) { FINE = CAT.fine.areas; FINE_ZOOM = CAT.fine.zoom; FINE_WHAT = CAT.fine.what || ""; }
   const built = CAT.months.filter((m) => m.tiles);
   if (!L.size) throw new Error("The catalog lists no browse tiles yet.");
   const julys = built.filter((m) => m.ym.endsWith("-07") && m.period === "train");
@@ -489,6 +489,13 @@ function addFineAreas() {
       onclick: (e) => { e.stopPropagation(); goFine(a); } }, [a.name, el("small", {}, "30 m")]);       // not a click on the map underneath
     return new maplibregl.Marker({ element: el("div", {}, btn), anchor: "bottom", offset: [0, -3] }).setLngLat([a.center[0], a.bounds[3]]).addTo(map);
   });
+  /* The same areas in the "Go to" list, ahead of the cities, and a line for them in the coverage card. */
+  $("#jump").insertBefore(el("optgroup", { label: "30 m areas" }, FINE.map((a) => el("option", { value: "fine:" + a.id }, a.name))), $("#jumpCities"));
+  $("#jump").options[0].textContent = "Go to…";
+  $("#jump").setAttribute("aria-label", "Go to a 30 m area or a city");
+  const row = $("#covFine");
+  row.querySelector("span:last-child").replaceChildren(el("b", {}, "30 m"), ` · ${numWord(FINE.length)} sample area${FINE.length > 1 ? "s" : ""}`);
+  row.hidden = false;
   onZoom();
 }
 function goFine(a) {
@@ -511,7 +518,9 @@ function onZoom() {
   const z = map.getZoom();
   if (pulse) pulse.getElement().style.display = z < 4.2 ? "" : "none";
   for (const m of cityMarkers) m.getElement().firstChild.style.opacity = z >= 5.6 && z <= 10.6 ? "1" : "0";
-  for (const m of fineTags) m.getElement().firstChild.style.display = z >= 4.2 ? "" : "none";
+  /* Far out the areas are a few pixels apart, so each is a small square (its name shows on hover); the
+     name tags come in once there is room for them. */
+  for (const m of fineTags) { const t = m.getElement().firstChild; t.style.display = z >= 4.2 ? "" : "none"; t.classList.toggle("compact", z < 7); }
   $("#coverCard").classList.toggle("dim", z > 7.2);
   if (map.getLayer("et")) map.setPaintProperty("et", "raster-resampling", z > CAT.zoom.max - 0.4 ? "nearest" : "linear");
   onMove();
@@ -611,14 +620,19 @@ function updateNote(redraw) {
       el("button", { class: "primary small", onclick: home }, "Go to the Korean Peninsula"),
       el("button", { class: "ghost", onclick: () => { const c = map.getCenter(); prefillRequest(c.lng, c.lat); showTab("request"); } }, "Request this area"));
   } else {
-    const n = FINE.length;
+    const n = FINE.length, c = map.getCenter();
     $("#znHead").textContent = `${finestRes()} is the finest level here for now`;
     $("#znText").textContent = n
-      ? capFirst(`${reviewClause()}the native 30 m maps are shown only for the ${numWord(n)} area${n > 1 ? "s" : ""} presented in the paper. The full 30 m maps will be released with the paper.`)
-      : `This public preview stops at about ${finestRes()} per pixel. The 30 m maps will be released with the paper.`;
-    $("#znBtns").replaceChildren(...FINE.map((a) => el("button", { class: "primary small", onclick: () => goFine(a) }, `${a.name} · 30 m`)));
+      ? capFirst(`${reviewClause()}the native 30 m maps are shown only in ${fineWords()}. The full 30 m maps will be released after the paper is accepted.`)
+      : `This public preview stops at about ${finestRes()} per pixel. The 30 m maps will be released after the paper is accepted.`;
+    /* the nearest areas first; all of them are in the "Go to" list */
+    const near = [...FINE].sort((a, b) => Math.hypot((a.center[0] - c.lng) * Math.cos(c.lat * Math.PI / 180), a.center[1] - c.lat) -
+                                          Math.hypot((b.center[0] - c.lng) * Math.cos(c.lat * Math.PI / 180), b.center[1] - c.lat)).slice(0, 3);
+    $("#znBtns").replaceChildren(...near.map((a) => el("button", { class: "primary small", onclick: () => goFine(a) }, `${a.name} · 30 m`)));
   }
 }
+/* "eight sample areas, around the paper's Korean flux-tower sites" — the catalog says what the areas are. */
+const fineWords = () => `${numWord(FINE.length)} sample area${FINE.length > 1 ? "s" : ""}${FINE_WHAT ? `, ${FINE_WHAT}` : ""}`;
 function syncBackground() {
   if (!map || !map.getLayer("ctx")) return;
   const bg = currentBg();
@@ -1032,7 +1046,7 @@ function renderDownload() {
   const notice = $("#dlNotice"); notice.replaceChildren();
   if (CFG.cogBase) notice.append("Files download directly from the links below.");
   else {
-    notice.append(el("b", {}, "Public download links are not open yet. "), "They will be added here when the paper is published.");
+    notice.append(el("b", {}, "Public download links are not open yet. "), "They will be added here after the paper is accepted.");
     if (CFG.nasPath) notice.append(el("br"), "Lab members: the files are on the lab storage under ", el("code", {}, CFG.nasPath + "/et_30m/"), ".");
   }
   const years = [...new Set(CAT.months.map((m) => m.ym.slice(0, 4)))], sel = $("#dlYear");
@@ -1216,10 +1230,11 @@ function wire() {
     if (map.getLayer("ctx")) map.setPaintProperty("ctx", "raster-opacity", ctxOpacity(e.target.value / 100));
   });
   $("#znClose").onclick = () => { noteOff = noteShown; updateNote(); };
-  $("#jump").append(...CITIES.map(([name], i) => el("option", { value: i }, name)));
-  $("#jump").onchange = (e) => {                                   // regional view around the city; the list snaps back to its prompt
-    const c = CITIES[+e.target.value];
-    if (e.target.value !== "" && c) map.flyTo({ center: [c[1], c[2]], zoom: zRegional(), duration: 1600 });
+  $("#jump").append(el("optgroup", { label: "Cities", id: "jumpCities" }, CITIES.map(([name], i) => el("option", { value: i }, name))));
+  $("#jump").onchange = (e) => {                                   // regional view around the city, or a sample area; the list snaps back to its prompt
+    const v = e.target.value, area = v.startsWith("fine:") ? FINE.find((a) => a.id === v.slice(5)) : null, c = area ? null : CITIES[+v];
+    if (area) goFine(area);
+    else if (v !== "" && c) map.flyTo({ center: [c[1], c[2]], zoom: zRegional(), duration: 1600 });
     e.target.value = "";
   };
   $("#btnHome").onclick = () => fitRegion(1400);
@@ -1243,21 +1258,28 @@ function wire() {
 /* Wording for a reduced copy of the tiles (see fullRes). The page's own text describes the full set;
    this replaces every sentence that would promise more than the tiles on hand can show. */
 function applyPreviewWording() {
-  const fine = finestRes(), n = FINE.length, names = FINE.map((a) => a.name).join(" and ");
-  const areas = `${numWord(n)} small area${n > 1 ? "s" : ""}`;
+  const fine = finestRes(), n = FINE.length, list = FINE.map((a) => a.name), names = n > 1 ? `${list.slice(0, -1).join(", ")} and ${list[n - 1]}` : list.join("");
+  const areas = `${numWord(n)} small area${n > 1 ? "s" : ""}${FINE_WHAT ? ` ${FINE_WHAT}` : ""}`;      // "eight small areas around the paper's Korean flux-tower sites"
   document.querySelector('#steps span[data-step="2"]').textContent = `Finest here · ${fine}`;
   $("#hint").textContent = `Click the Korean Peninsula: the map zooms in to about ${fine} per pixel, the finest level of this public preview, and the panel on the right shows the monthly series at that spot.` +
-    (n ? ` ${capFirst(areas)} shown in the paper, ${names}, ${n > 1 ? "go" : "goes"} on to the native 30 m; ${n > 1 ? "they are" : "it is"} outlined on the map.` : "") +
+    (n ? ` ${capFirst(areas)} ${n > 1 ? "go" : "goes"} on to the native 30 m; ${n > 1 ? "they are" : "it is"} outlined on the map and listed under “Go to”.` : "") +
     " The 30 m maps themselves are the GeoTIFFs.";
   $("#rcHead").textContent = "Full record at this spot";
   $("#tilesZoom").textContent = `zoom ${CAT.zoom.min}–${CAT.zoom.max} on this public copy, about ${fine} per pixel at best` +
-    (n ? `, plus zoom ${FINE_ZOOM} (30 m) inside ${areas}` : "") + `; the full set goes to zoom ${CAT.zoom.native}, 30 m`;
+    (n ? `, plus zoom ${FINE_ZOOM} (30 m) inside ${numWord(n)} small area${n > 1 ? "s" : ""}` : "") + `; the full set goes to zoom ${CAT.zoom.native}, 30 m`;
   const badge = $("#previewBadge");
   badge.textContent = n ? `Public preview · ${fine}, and 30 m in ${numWord(n)} area${n > 1 ? "s" : ""}` : `Public preview · maps shown down to ${fine}`; badge.hidden = false;
   const li = $("#abPreview");
   li.replaceChildren(el("b", {}, "This site shows a reduced copy."), ` The maps on this page stop at about ${fine} per pixel, and a value read at a clicked spot is the mean over a ${fine} cell.` +
-    (n ? ` ${capFirst(areas)} shown in the paper (${names}) ${n > 1 ? "keep" : "keeps"} the native 30 m.` : "") + " The 30 m maps are the GeoTIFFs.");
+    (n ? ` ${capFirst(areas)} (${names}) ${n > 1 ? "keep" : "keeps"} the native 30 m.` : "") + " The 30 m maps are the GeoTIFFs.");
   li.hidden = false;
+}
+/* A line at the very top of the page: where the paper stands and when the data will be released
+   (js/config.js `notice`). Empty it at publication and the line is gone. */
+function applyNotice() {
+  $("#pageNotice").textContent = CFG.notice;
+  $("#pageNotice").hidden = false;
+  document.body.classList.add("has-notice");
 }
 /* Where the catalog has a background layer, the About tab says what it is and credits it. */
 function applyBackgroundWording() {
@@ -1284,6 +1306,7 @@ async function main() {
   $("#abMail").textContent = CFG.requestEmail; $("#abMail").href = "mailto:" + CFG.requestEmail;
   $("#footVer").textContent = `Data version ${CAT.version}`;
   if (CFG.paperStatus) $("#abPaper").textContent = `Manuscript ${CFG.paperStatus}.`;
+  if (CFG.notice && !CFG.nasPath) applyNotice();                   // not on the lab's internal copy, which is no preview and says so itself
   if (!fullRes()) applyPreviewWording();
   if (BG) applyBackgroundWording();
   wire(); initRequest(); renderDownload(); renderCode();

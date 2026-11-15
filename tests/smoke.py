@@ -100,7 +100,8 @@ with sync_playwright() as pw:
         return {zoom: m.getZoom(), center: m.getCenter(), cached: p.dnCache.size, layers: p.L.size,
                 projection: m.getProjection && JSON.stringify(m.getProjection()), title: document.querySelector('#lyTitle').textContent,
                 mean: document.querySelector('#lyMean').textContent, res: document.querySelector('#roRes').textContent,
-                paper: (window.PORTAL_CONFIG || {}).paperStatus || ''}; }""")
+                paper: (window.PORTAL_CONFIG || {}).paperStatus || '', notice: (window.PORTAL_CONFIG || {}).notice || '',
+                internal: new URLSearchParams(location.search).has('nas')}; }""")
     notes.append(f"info {info}")
     check(info["cached"] > 0, f"numeric tiles decoded and cached ({info['cached']})")
     check(page.evaluate("window.__portal.exact()"), "tiles are decoded byte for byte (no canvas round trip)")
@@ -118,6 +119,15 @@ with sync_playwright() as pw:
         return {shown: getComputedStyle(f).display !== 'none', n: im.length, loaded: im.every((i) => i.complete && i.naturalWidth > 0),
                 noindex: !!document.querySelector('meta[name=robots]')}; }""")
     check(strip["shown"] and strip["n"] == 2 and strip["loaded"] and not strip["noindex"], f"logo strip shown with {strip['n']} logos; page is indexable")
+    # the line at the very top: where the paper stands and when the data will be released (not on the lab's internal copy)
+    if info["notice"]:
+        pn = page.evaluate("""() => { const n = document.querySelector('#pageNotice'), r = n.getBoundingClientRect(), h = document.querySelector('header.top').getBoundingClientRect();
+            return {shown: !n.hidden && r.height > 0, text: n.textContent, top: r.top, above: r.bottom <= h.top + 1, wide: r.width >= innerWidth - 2}; }""")
+        if info["internal"]:
+            check(not pn["shown"], "the lab's internal copy does not carry the public notice")
+        else:
+            check(pn["shown"] and pn["text"] == info["notice"] and pn["top"] <= 1 and pn["above"] and pn["wide"],
+                  f"notice at the very top of the page: {pn['text']}")
 
     # the background layer: another product under our maps, named wherever a value from it is shown
     if bg:
@@ -193,11 +203,27 @@ with sync_playwright() as pw:
     res = page.inner_text("#roRes")
     check(4 < v["z"] < 8 and "km per pixel" in res, f"'Peninsula' fits the region (zoom {v['z']:.2f}, {res})")
     if fine:
-        tags = page.evaluate("""() => [...document.querySelectorAll('.fine-tag')].map((t) => ({text: t.textContent, shown: getComputedStyle(t).display !== 'none'}))""")
-        check(len(tags) == len(fine) and all(t["shown"] and "30 m" in t["text"] for t in tags)
-              and page.evaluate("!!window.__portal.map.getLayer('fine-line')"),
-              f"sample areas are outlined and tagged on the map: {[t['text'] for t in tags]}")
-    page.screenshot(path=str(shots / "02_peninsula.png"))
+        def tags():
+            return page.evaluate("""() => [...document.querySelectorAll('.fine-tag')].map((t) => { const r = t.getBoundingClientRect();
+                return {text: t.textContent, shown: getComputedStyle(t).display !== 'none', compact: t.classList.contains('compact'), w: r.width}; })""")
+        far = tags()
+        cov = page.evaluate("(() => { const r = document.querySelector('#covFine'); return {shown: !r.hidden, text: r.textContent}; })()")
+        go = page.evaluate("""[...document.querySelectorAll('#jump optgroup[label="30 m areas"] option')].map((o) => o.textContent)""")
+        check(len(far) == len(fine) and all(t["shown"] and "30 m" in t["text"] and t["compact"] and t["w"] < 20 for t in far)
+              and page.evaluate("!!window.__portal.map.getLayer('fine-line')") and cov["shown"] and "30 m" in cov["text"]
+              and go == [f["name"] for f in fine],
+              f"sample areas: {len(far)} small squares on the peninsula view, a line in the coverage card ('{cov['text'].strip()}'), all in the 'Go to' list")
+        page.screenshot(path=str(shots / "02_peninsula.png"))
+        page.evaluate("([lng, lat]) => window.__portal.map.jumpTo({center: [lng, lat], zoom: 7.6})", fine[0]["center"])
+        settle(900)
+        near = tags()
+        check(all(t["shown"] and not t["compact"] and t["w"] > 40 for t in near) and page.inner_text(".fine-tag") != "",
+              f"closer in the squares become name tags: {[t['text'] for t in near][:4]} …")
+        page.screenshot(path=str(shots / "02b_area_tags.png"))
+        page.click("#btnHome")
+        settle(2200)
+    else:
+        page.screenshot(path=str(shots / "02_peninsula.png"))
 
     # hover: the readout shows a value in physical units
     box = page.locator("#map").bounding_box()
@@ -248,7 +274,7 @@ with sync_playwright() as pw:
         page.evaluate("window.__portal.map.jumpTo({zoom: 10.6})")
         settle(1200)
         n = note()
-        check(n["kind"] == "finest" and n["shown"] and "finest level here" in n["text"] and "30 m" in n["text"] and len(n["buttons"]) == len(fine)
+        check(n["kind"] == "finest" and n["shown"] and "finest level here" in n["text"] and "30 m" in n["text"] and len(n["buttons"]) == min(3, len(fine))
               and (not info["paper"] or not fine or info["paper"] in n["text"]),
               "past the finest level a note says so: " + " ".join(n["text"].split())[:260])
         page.screenshot(path=str(shots / "04_finest_note.png"))
@@ -261,9 +287,13 @@ with sync_playwright() as pw:
             page.wait_for_timeout(400)
             page.evaluate("window.__portal.map.jumpTo({zoom: 10.6})")
             settle(900)
+            # the note offers the nearest areas, nearest first
+            c0, names = view(), note()["buttons"]
+            by_dist = sorted(fine, key=lambda f: math.hypot((f["center"][0] - c0["lng"]) * math.cos(math.radians(c0["lat"])), f["center"][1] - c0["lat"]))
+            check(names == [f"{f['name']} · 30 m" for f in by_dist[:3]], f"the note offers the nearest areas: {names}")
             page.click("#znBtns button:first-child")
             settle(3000)
-            v, f0 = view(), fine[0]
+            v, f0 = view(), by_dist[0]
             check(abs(v["z"] - (fine_zoom - 0.3)) < 0.05 and abs(v["lng"] - f0["center"][0]) < 0.01 and abs(v["lat"] - f0["center"][1]) < 0.01
                   and "(native)" in page.inner_text("#roRes") and not note()["shown"]
                   and page.evaluate("""(() => { const s = document.querySelector('#steps span[data-step="2"]'); return s.classList.contains('on') && s.textContent === 'Native 30 m'; })()"""),

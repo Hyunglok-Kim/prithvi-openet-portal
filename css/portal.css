@@ -114,6 +114,8 @@ main { max-width: 1640px; margin: 0 auto; padding: 14px 20px 28px; }
 .cov-map { display: block; width: 100%; height: auto; margin: 2px 0 8px; pointer-events: none; user-select: none; -webkit-user-drag: none; }
 .sw-avail { background: #225EA8; border-radius: 50%; width: 9px; height: 9px; margin: 0 1px; box-shadow: 0 0 0 1.5px var(--bg), 0 0 0 3px var(--accent-solid); }
 .sw-demand { background: #C4C1B6; }
+.sw-fine { width: 10px; height: 10px; background: var(--accent-solid); border: 2px solid #fff; box-shadow: 0 0 0 1px rgba(15,19,24,.55); }      /* the squares on the map */
+.cov-row[hidden] { display: none; }
 .sw-nodata { background: repeating-conic-gradient(#d8d5c9 0% 25%, #fff 0% 50%) 50% / 6px 6px; border: 1px solid var(--border-strong); margin-right: 6px; }
 .linkbtn { border: 0; background: none; padding: 4px 0 0; color: var(--accent-deep); font-weight: 600; cursor: pointer; font-size: 12.5px; }
 .linkbtn:hover { text-decoration: underline; }
@@ -146,6 +148,11 @@ main { max-width: 1640px; margin: 0 auto; padding: 14px 20px 28px; }
   font: 600 11.5px/1.3 var(--font-ui); color: var(--text); white-space: nowrap; box-shadow: 0 1px 6px rgba(0,0,0,.35); }
 .fine-tag small { margin-left: 5px; font-size: 11px; font-weight: 600; color: var(--accent-deep); }
 .fine-tag:hover { border-color: var(--accent-solid); }
+/* Far out, where the areas are a few pixels apart, a tag is only a small square. */
+.fine-tag.compact { width: 12px; height: 12px; padding: 0; border-radius: 3px; border: 2px solid #fff; background: var(--accent-solid);
+  font-size: 0; overflow: hidden; box-shadow: 0 0 0 1px rgba(15,19,24,.55), 0 1px 5px rgba(0,0,0,.5); }
+.fine-tag.compact small { display: none; }
+.fine-tag.compact:hover { border-color: #fff; background: var(--accent-deep); }
 
 .readout { color: var(--text-2); }
 .readout #roVal { color: var(--text); font-weight: 600; }
@@ -306,6 +313,13 @@ html.embed .top { padding-top: 14px; }
 .logos-footer .logo-hydroai img { max-height: 60px; max-width: 140px; }
 body { padding-bottom: 80px; }                                   /* room above the sticky strip */
 html:not(.embed) body:not(.hide-footer) { --map-h: max(560px, calc(100vh - 306px)); }   /* keep the map's lower edge clear of the strip */
+
+/* ── the line at the very top of the page (js/config.js notice) ── */
+.page-notice { margin: 0; padding: 8px 20px; text-align: center; font-size: 13.5px; line-height: 1.45; color: var(--text);
+  background: var(--accent-tint); border-bottom: 1px solid rgba(184,84,52,.28); text-wrap: balance; }
+.page-notice[hidden] { display: none; }
+html:not(.embed) body.has-notice.hide-footer { --map-h: max(560px, calc(100vh - 273px)); }      /* the line takes its height from the map */
+html:not(.embed) body.has-notice:not(.hide-footer) { --map-h: max(560px, calc(100vh - 343px)); }
 body.hide-footer .logos-footer { display: none; }
 body.hide-footer { padding-bottom: 0; }
 @media (max-width: 900px) {

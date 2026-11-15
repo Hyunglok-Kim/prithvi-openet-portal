@@ -10,7 +10,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600&family=Source+Serif+4:opsz,wght@8..60,500;8..60,600&display=swap" />
 <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5.24.1/dist/maplibre-gl.css" />
-<link rel="stylesheet" href="css/portal.css?v=20261115m" />
+<link rel="stylesheet" href="css/portal.css?v=20261115n" />
 </head>
 <body>
 
@@ -19,6 +19,9 @@
   <p class="boot-title">Prithvi-OpenET-Tower</p>
   <p class="boot-sub" id="bootMsg">Loading the catalog…</p>
 </div>
+
+<!-- Where the paper stands and when the data will be released: one line from js/config.js (notice), above everything. -->
+<p class="page-notice" id="pageNotice" role="note" hidden></p>
 
 <header class="top">
   <div class="brand">
@@ -68,6 +71,8 @@
                alt="World map. The Korean Peninsula is coloured and ringed; all other land is grey." />
           <p class="cov-row"><span class="sw sw-avail"></span><span><b>Available now</b> · Korean Peninsula</span></p>
           <p class="cov-row"><span class="sw sw-demand"></span><span><b>On request</b> · any other land area</span></p>
+          <!-- the small squares on the map: areas a reduced copy of the tiles keeps at 30 m -->
+          <p class="cov-row" id="covFine" hidden><span class="sw sw-fine"></span><span></span></p>
           <button class="primary small" id="btnRequestHere">Request a region</button>
         </div>
 
@@ -388,7 +393,7 @@
 
 <script src="https://unpkg.com/maplibre-gl@5.24.1/dist/maplibre-gl.js"></script>
 <script src="https://unpkg.com/pmtiles@4.5.0/dist/pmtiles.js"></script>
-<script src="js/config.js?v=20261115m"></script>
-<script src="js/app.js?v=20261115m"></script>
+<script src="js/config.js?v=20261115n"></script>
+<script src="js/app.js?v=20261115n"></script>
 </body>
 </html>

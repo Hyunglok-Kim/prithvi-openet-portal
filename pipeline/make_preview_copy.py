@@ -68,16 +68,18 @@ def tiles_up_to(get_bytes, header, limit):
 
 
 def load_areas(path):
-    """The areas of a --fine file: id, name, outline (lon/lat ring), bounding box and centre."""
+    """The areas of a --fine file — id, name, outline (lon/lat ring), bounding box and centre — and
+    the file's "what": a few words on what the areas are, which the portal puts into its sentences."""
+    doc = json.loads(Path(path).read_text())
     areas = []
-    for f in json.loads(Path(path).read_text())["features"]:
+    for f in doc["features"]:
         ring = [[round(float(lo), 5), round(float(la), 5)] for lo, la in f["geometry"]["coordinates"][0]]
         lons, lats = [p[0] for p in ring], [p[1] for p in ring]
         p = f["properties"]
         areas.append({"id": p["id"], "name": p["name"], "about": p.get("about", ""), "ring": ring,
                       "bounds": [min(lons), min(lats), max(lons), max(lats)],
                       "center": [round((min(lons) + max(lons)) / 2, 5), round((min(lats) + max(lats)) / 2, 5)]})
-    return areas
+    return areas, doc.get("what", "")
 
 
 def world_px(lon, lat, z):
@@ -185,7 +187,7 @@ def main():
     a = ap.parse_args()
     src, out, t0 = Path(a.src), Path(a.out), time.time()
     cat = json.loads((src / "catalog.json").read_text())
-    areas = load_areas(a.fine) if a.fine else []
+    areas, what = load_areas(a.fine) if a.fine else ([], "")
 
     # every layer record of the catalog, in the order they are stored: climatology first, then the months
     records = ([cat["annual"]] if cat.get("annual") else []) + list(cat.get("clim", [])) + [m["tiles"] for m in cat["months"] if m.get("tiles")]
@@ -222,7 +224,7 @@ def main():
     cat["copy"] = {"kind": "preview", "of_version": cat["version"], "made": time.strftime("%Y-%m-%dT%H:%M:%S%z"), "sites": names}
     cat.pop("fine", None)
     if fine_count:
-        cat["fine"] = {"zoom": native, "areas": areas}
+        cat["fine"] = {"zoom": native, "what": what, "areas": areas}
 
     # the background layer travels as it is, in the first folder
     block_file = src / "background" / "background.json"
@@ -236,8 +238,8 @@ def main():
     (out / names[0] / "catalog.json").write_text(json.dumps(cat, separators=(",", ":")))
 
     first, last = cat["record"]["first"], cat["record"]["last"]
-    fine_words = (f"{len(areas)} small area{'s' if len(areas) > 1 else ''} ({', '.join(ar['name'] for ar in areas)}) keep the native "
-                  f"zoom {native} in the `*.fine.pmtiles` files; outside their outlines those tiles repeat zoom {cat['zoom']['max']}.\n"
+    fine_words = (f"{len(areas)} small area{'s' if len(areas) > 1 else ''}{' ' + what if what else ''} ({', '.join(ar['name'] for ar in areas)})\n"
+                  f"keep the native zoom {native} in the `*.fine.pmtiles` files; outside their outlines those tiles repeat zoom {cat['zoom']['max']}.\n"
                   if fine_count else "")
     for k, name in enumerate(names, 1):
         folder = out / name
@@ -252,7 +254,7 @@ def main():
             "One PMTiles file per month (`monthly/`) and per climatology layer (`clim/`). A tile is an 8-bit\n"
             "grayscale PNG that holds values, not colours: `value = DN × dn_step`, `DN 255 = no data`.\n"
             "These tiles are for looking, not for analysis — they are resampled to Web Mercator, averaged and\n"
-            f"rounded. Use the GeoTIFFs for any calculation; they will be released with the paper.\n{bg_words}\n"
+            f"rounded. Use the GeoTIFFs for any calculation; they will be released after the paper is accepted.\n{bg_words}\n"
             f"Made by `pipeline/make_preview_copy.py` of the portal repository from data version `{cat['version']}`.\n"
             "Do not edit by hand: rebuild and replace.\n\n"
             "HydroAI Lab, Gwangju Institute of Science and Technology — hyunglokkim@gist.ac.kr\n")

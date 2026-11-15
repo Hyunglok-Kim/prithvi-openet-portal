@@ -1,16 +1,15 @@
 {
   "type": "FeatureCollection",
-  "note": "Areas that a reduced public copy of the tiles shows at the native 30 m (make_preview_copy.py --fine). They are the two Korean scenes that the paper itself shows: each ring is the 224 x 224 pixel (6.72 km) input chip of that scene, converted from UTM zone 52N.",
+  "note": "Areas that a reduced public copy of the tiles shows at the native 30 m (make_preview_copy.py --fine). They are the eight Korean flux-tower sites of the paper's tower network: each ring is the 224 x 224 pixel (6.72 km) input chip around one site, converted from UTM zone 52N. Cheorwon and Anmyeon are also the two Korean scenes the paper shows as maps.",
+  "what": "around the paper's Korean flux-tower sites",
   "features": [
-    {
-      "type": "Feature",
-      "properties": { "id": "cheorwon", "name": "Cheorwon", "about": "rice paddies and upland fields" },
-      "geometry": { "type": "Polygon", "coordinates": [[[127.21056, 38.2311], [127.2873, 38.23224], [127.28872, 38.1717], [127.21204, 38.17056], [127.21056, 38.2311]]] }
-    },
-    {
-      "type": "Feature",
-      "properties": { "id": "anmyeon", "name": "Anmyeon", "about": "evergreen needleleaf forest on the west coast" },
-      "geometry": { "type": "Polygon", "coordinates": [[[126.32062, 36.53508], [126.39561, 36.53675], [126.39764, 36.47623], [126.32271, 36.47457], [126.32062, 36.53508]]] }
-    }
+    {"type": "Feature", "properties": {"id": "cheorwon", "name": "Cheorwon", "about": "rice paddies and upland fields"}, "geometry": {"type": "Polygon", "coordinates": [[[127.21056, 38.2311], [127.2873, 38.23224], [127.28872, 38.1717], [127.21204, 38.17056], [127.21056, 38.2311]]]}},
+    {"type": "Feature", "properties": {"id": "anmyeon", "name": "Anmyeon", "about": "evergreen needleleaf forest on the west coast"}, "geometry": {"type": "Polygon", "coordinates": [[[126.32062, 36.53508], [126.39561, 36.53675], [126.39764, 36.47623], [126.32271, 36.47457], [126.32062, 36.53508]]]}},
+    {"type": "Feature", "properties": {"id": "paju", "name": "Paju", "about": "mixed forest in the Seolmacheon basin"}, "geometry": {"type": "Polygon", "coordinates": [[[126.91574, 37.9686], [126.9922, 37.96993], [126.99385, 37.9094], [126.91745, 37.90807], [126.91574, 37.9686]]]}},
+    {"type": "Feature", "properties": {"id": "hongcheon", "name": "Hongcheon", "about": "mixed forest"}, "geometry": {"type": "Polygon", "coordinates": [[[127.80713, 37.64926], [127.88329, 37.65001], [127.88419, 37.58945], [127.80809, 37.5887], [127.80713, 37.64926]]]}},
+    {"type": "Feature", "properties": {"id": "pyeongchang", "name": "Pyeongchang", "about": "deciduous broadleaf forest"}, "geometry": {"type": "Polygon", "coordinates": [[[128.47769, 37.5119], [128.55372, 37.51221], [128.55408, 37.45164], [128.47811, 37.45133], [128.47769, 37.5119]]]}},
+    {"type": "Feature", "properties": {"id": "samcheok", "name": "Samcheok", "about": "evergreen needleleaf forest near the east coast"}, "geometry": {"type": "Polygon", "coordinates": [[[129.26093, 37.25182], [129.33671, 37.25163], [129.33644, 37.19105], [129.26072, 37.19125], [129.26093, 37.25182]]]}},
+    {"type": "Feature", "properties": {"id": "yeoju", "name": "Yeoju", "about": "cropland in the Cheongmicheon basin"}, "geometry": {"type": "Polygon", "coordinates": [[[127.61532, 37.18966], [127.69101, 37.19052], [127.69206, 37.12996], [127.61642, 37.1291], [127.61532, 37.18966]]]}},
+    {"type": "Feature", "properties": {"id": "wando", "name": "Wando", "about": "evergreen broadleaf forest on a southern island"}, "geometry": {"type": "Polygon", "coordinates": [[[126.64048, 34.38925], [126.71352, 34.39064], [126.71517, 34.33008], [126.64218, 34.3287], [126.64048, 34.38925]]]}}
   ]
 }

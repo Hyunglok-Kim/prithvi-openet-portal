@@ -8,9 +8,10 @@ Science and Technology.
 **Live:** https://hyunglok-kim.github.io/prithvi-openet-portal/ — also embedded at
 https://hydroai.net/data#et.
 
-**Status: public preview.** The public site shows the maps down to about 120 m per pixel (a reduced
-copy of the browse tiles), and at the native 30 m in two small areas that the paper shows. The full
-30 m maps and the GeoTIFFs will be released with the paper. The model code is at
+**Status: public preview.** The paper on this dataset is under review. The public site shows the
+maps down to about 120 m per pixel (a reduced copy of the browse tiles), and at the native 30 m in
+eight small areas around the paper's Korean flux-tower sites. The full 30 m maps and the GeoTIFFs
+will be released after the paper is accepted. The model code is at
 [Prithvi_OpenET_code_public](https://github.com/Hyunglok-Kim/Prithvi_OpenET_code_public).
 
 ## What it does

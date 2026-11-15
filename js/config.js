@@ -16,7 +16,9 @@
    demandLagMonths  how far behind "today" a request can reach (input data arrive late).
    paperStatus   where the paper stands, in words that finish "While the paper is …" and "Manuscript …".
                  The notes on the map about what is published so far, and the citation, use it.
-                 Empty at publication: the notes then drop that clause. */
+                 Empty at publication: the notes then drop that clause.
+   notice        one line shown at the very top of the page: where the paper stands and when the data
+                 will be released. Empty it and the line is gone. */
 window.PORTAL_CONFIG = {
   dataBase: "https://hyunglok-kim.github.io/prithvi-openet-tiles-1/",
   cogBase: "",
@@ -25,4 +27,5 @@ window.PORTAL_CONFIG = {
   demandFirstMonth: "2013-04",
   demandLagMonths: 3,
   paperStatus: "under review",
+  notice: "The paper on this dataset is under review. The data will be released after the paper is accepted; what you see here is a preview.",
 };
