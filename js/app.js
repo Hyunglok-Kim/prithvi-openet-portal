@@ -506,7 +506,7 @@ function goFine(a) {
   if (popup) { popup.remove(); popup = null; }
   const box = map.getContainer(), wide = box.clientWidth >= 900;
   const fit = map.cameraForBounds([[a.bounds[0], a.bounds[1]], [a.bounds[2], a.bounds[3]]],
-    { padding: { top: 64, bottom: 56, left: wide ? 290 : 24, right: wide ? 40 : 24 } });      // clear of the controls and, where there is room, the legend
+    { padding: { top: 86, bottom: 56, left: wide ? 290 : 24, right: wide ? 40 : 24 } });      // clear of the controls (the name tag sits above the outline) and, where there is room, the legend
   const zMin = FINE_ZOOM + 0.6, zMax = FINE_ZOOM + 1.5;                                        // 3 to 5.7 screen px per native pixel
   if (fit && fit.zoom >= zMin) map.flyTo({ center: fit.center, zoom: Math.min(fit.zoom, zMax), duration: 1800 });
   else map.flyTo({ center: a.center, zoom: zMin, duration: 1800 });
