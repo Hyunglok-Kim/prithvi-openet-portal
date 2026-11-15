@@ -7,7 +7,7 @@ regions. `README.md` is the short introduction; this file is the detail a mainta
 agent) needs before changing anything.
 
 **Status (November 2026): prototype.** The site is not served publicly yet and the tiles and
-GeoTIFFs are not published. Lab-internal operations (storage paths, how the lab hosts its preview
+GeoTIFFs are not published. The request backend (`worker/`) is deployed and connected. Lab-internal operations (storage paths, how the lab hosts its preview
 copy) are documented outside this repository.
 
 ## Layout
@@ -122,20 +122,28 @@ you change them.
 
 A static page cannot send mail, so the "Request a region" form needs something on the internet to
 receive it. `worker/` is that: a Cloudflare Worker that checks the form and emails it to the lab
-through Cloudflare Email Service. Mail to your own verified address is free on every plan. Until
-`requestEndpoint` is filled in (`js/config.js`), the form opens an email draft instead.
+through Cloudflare Email Service. Mail to your own verified address is free on every plan. It is
+deployed (November 2026) and `requestEndpoint` in `js/config.js` points at it; with that setting
+empty, the form opens an email draft instead.
 
-To turn it on:
+To set it up on an account (as it was done, on the free plan):
 
-1. Cloudflare dashboard → Compute → Email Service → Email Routing → Destination addresses: add the
-   address in `MAIL_TO` and click the link in the verification mail.
-2. Onboard the sending domain (Email Routing, or Email Sending on a paid plan) so mail from
-   `MAIL_FROM` is accepted.
-3. `cd worker && npx wrangler login`, then `npx wrangler deploy`.
+1. Cloudflare dashboard → Compute → Email Service → Email Routing → the domain → Destination
+   addresses: add the address in `MAIL_TO` and click the link in the verification mail. Until the
+   status reads Verified, every send fails with `E_RECIPIENT_NOT_ALLOWED`.
+2. Same place → Settings → DNS records → Add missing records. This puts three MX records, an SPF
+   and a DKIM record on the domain, and it is what allows mail from an address on that domain
+   (`MAIL_FROM`). On a paid Workers plan, Email Sending → Onboard Domain is the alternative.
+3. `cd worker && npm install`, `npx wrangler login` once, then `npx wrangler deploy`. The first
+   Worker of an account answers over HTTPS only after a few minutes (TLS errors until then).
 4. Origins that should not appear in this repository (an intranet preview, for instance) go into the
-   secret `EXTRA_ORIGINS`: `npx wrangler secret put EXTRA_ORIGINS` (comma-separated).
+   secret `EXTRA_ORIGINS`: `npx wrangler secret put EXTRA_ORIGINS` (comma-separated). Secrets
+   survive later deploys.
 5. Put the address `wrangler deploy` prints into `js/config.js` as `requestEndpoint`, bump the `?v=`,
-   and send one real request to see the mail arrive.
+   and send one real request through the form to see the mail arrive.
+
+To check a deployment without sending mail: a `GET` answers 405, a `POST` from an origin that is not
+listed answers 403, and a `POST` with the `website` field filled answers a quiet 200.
 
 What the Worker enforces: the mail binding can send to one address only; browsers may call it only
 from `ALLOWED_ORIGINS` plus `EXTRA_ORIGINS`; five submissions a minute per network address; 8 KB at

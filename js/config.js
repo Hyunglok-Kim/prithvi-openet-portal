@@ -16,7 +16,7 @@ window.PORTAL_CONFIG = {
   dataBase: "./data/",
   cogBase: "",
   requestEmail: "hyunglokkim@gist.ac.kr",
-  requestEndpoint: "",
+  requestEndpoint: "https://prithvi-openet-requests.hyunglokkim.workers.dev",
   demandFirstMonth: "2013-04",
   demandLagMonths: 3,
 };

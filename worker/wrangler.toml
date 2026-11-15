@@ -1,9 +1,10 @@
 # Prithvi-OpenET-Tower portal — on-demand request receiver.
-# Deploy:  cd worker && npx wrangler login && npx wrangler deploy
-# Before the first deploy, in the Cloudflare dashboard (Compute > Email Service):
-#   1. Email Routing > Destination addresses: add the MAIL_TO address and click the link in the
-#      verification mail. Only verified addresses can receive mail from a Worker.
-#   2. Onboard the sending domain (Email Routing, or Email Sending on a paid plan) so MAIL_FROM is accepted.
+# Deploy:  cd worker && npm install && npx wrangler login && npx wrangler deploy
+# For mail to go out, in the Cloudflare dashboard (Compute > Email Service > Email Routing > the domain):
+#   1. Destination addresses: add the MAIL_TO address and click the link in the verification mail.
+#      Only verified addresses can receive mail from a Worker (E_RECIPIENT_NOT_ALLOWED otherwise).
+#   2. Settings > DNS records > Add missing records (MX, SPF, DKIM), so that mail from MAIL_FROM's
+#      domain is accepted. On a paid Workers plan, Email Sending > Onboard Domain does the same job.
 # Then put the URL that `wrangler deploy` prints into ../js/config.js (requestEndpoint).
 
 name = "prithvi-openet-requests"
