@@ -250,6 +250,9 @@ Left:
 - **The archives start at zoom 3 but the globe asks for less.** Zoomed all the way out the map wants
   zoom-2 tiles. `coarserDN` averages them in the browser from zoom 3, with the pipeline's 25 % rule;
   without it the data vanishes from the globe just when the whole Earth is in view.
+- **Report the page's own height to the embedding page, not `scrollHeight`.** Inside a frame that
+  starts 3,000 px tall (hydroai.net), `scrollHeight` is never less than the frame, so the frame only
+  ever grew and the page ended in a blank stretch. `sendHeight()` measures the body's box.
 - **Panels over the map follow the map's width, not the window's.** In the two-column layout a
   1,100 px window leaves a 650 px map. A container query on `.mapwrap` drops the opacity slider and
   the resolution pill there, and `fitPadding()` fits the region to the right of the coverage card.

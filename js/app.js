@@ -1007,7 +1007,9 @@ function showTab(name) {
 }
 function sendHeight() {
   if (window.parent === window) return;
-  const h = Math.max(document.documentElement.scrollHeight, document.body.scrollHeight);
+  /* The page's own height, not scrollHeight: inside a frame that starts tall, scrollHeight is never
+     less than the frame, so the frame could only grow and the page would end in a blank stretch. */
+  const h = Math.ceil(document.body.getBoundingClientRect().height);
   window.parent.postMessage({ type: "portalHeight", height: h }, "*");
 }
 function wire() {
