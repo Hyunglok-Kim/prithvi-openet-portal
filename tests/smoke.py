@@ -6,15 +6,17 @@
 
 Checks that the page boots without console errors, that tiles decode to the exact numbers the
 pipeline wrote (--ref, see tests/make_tile_ref.py), that hover, click-to-zoom, the pixel series,
-the full record and its CSV, the world view, the tabs and the request form work, and saves
-screenshots to look at. Exit code 1 if any check fails.
+the full record and its CSV, the globe, the fixed coverage picture, the tabs and the request form
+work, and saves screenshots to look at. Exit code 1 if any check fails.
 
 When the copy under test sits behind a session cookie, put "name=value" in the SMOKE_COOKIE
 environment variable.
 """
 import argparse
 import json
+import math
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -73,6 +75,33 @@ with sync_playwright() as pw:
     check(page.evaluate("window.__portal.exact()"), "tiles are decoded byte for byte (no canvas round trip)")
     check(4 < info["zoom"] < 8, f"initial view fits the peninsula (zoom {info['zoom']:.2f})")
     check("km per pixel" in info["res"], f"overview resolution readout: {info['res']}")
+
+    # coverage picture: a file shown as an image (nothing in it reacts), with the region where the data is
+    cov = page.evaluate("""async () => { const im = document.querySelector('#covMap'), r = im.getBoundingClientRect(),
+        c = document.querySelector('#coverCard').getBoundingClientRect(), box = document.querySelector('#map').getBoundingClientRect();
+        return {tag: im.tagName, ok: im.complete && im.naturalWidth > 0, w: r.width, h: r.height, pe: getComputedStyle(im).pointerEvents,
+                inCard: r.left >= c.left && r.right <= c.right && r.top >= c.top && r.bottom <= c.bottom,
+                cardInMap: c.left >= box.left && c.bottom <= box.bottom, key: document.querySelector('#coverCard').innerText,
+                svg: await (await fetch(im.src)).text()}; }""")
+    check(cov["tag"] == "IMG" and cov["ok"] and cov["pe"] == "none" and cov["inCard"] and cov["cardInMap"] and 200 < cov["w"] < 320
+          and abs(cov["w"] / cov["h"] - 720 / 316.3) < 0.05, f"coverage picture: a fixed image of {cov['w']:.0f} x {cov['h']:.0f} px inside the coverage card")
+    reg = re.search(r'<g data-region="([^"]+)"><circle cx="([\d.]+)" cy="([\d.]+)" r="([\d.]+)"', cov["svg"])
+
+    def equal_earth(lon, lat):                                   # the projection of pipeline/make_coverage_map.py, in its drawing units
+        a1, a2, a3, a4, m = 1.340264, -0.081106, 0.000893, 0.003796, math.sqrt(3) / 2
+        def xy(lo, la):
+            th = math.asin(m * math.sin(math.radians(la)))
+            return (math.radians(lo) * math.cos(th) / (m * (a1 + 3 * a2 * th**2 + th**6 * (7 * a3 + 9 * a4 * th**2))),
+                    th * (a1 + a2 * th**2 + th**6 * (a3 + a4 * th**2)))
+        xmax, ytop, k = xy(180, 0)[0], xy(0, 90)[1], 720 / (2 * xy(180, 0)[0])
+        x, y = xy(lon, lat)
+        return (x + xmax) * k, (ytop - y) * k
+
+    ex, ey = equal_earth(127.7, 37.9)                            # the middle of the peninsula
+    check(bool(reg) and reg.group(1) in cov["key"] and math.hypot(float(reg.group(2)) - ex, float(reg.group(3)) - ey) < 6
+          and cov["svg"].count("<path") == 3 and len(cov["svg"]) < 120_000,
+          f"coverage picture marks {reg.group(1) if reg else '?'} where it is on the Earth "
+          f"({reg.group(2) if reg else '?'}, {reg.group(3) if reg else '?'} vs {ex:.1f}, {ey:.1f}); file {len(cov['svg']) / 1024:.0f} KB")
 
     if a.ref:
         ref = json.loads(Path(a.ref).read_text())
@@ -158,23 +187,30 @@ with sync_playwright() as pw:
     page.wait_for_timeout(900)
     check("mean" in page.inner_text("#lyTitle"), "seasonal-cycle layer: " + page.inner_text("#lyTitle"))
 
-    # world view: flat, grey land, colour only where data exists (tiles coarser than the archive are averaged in the browser)
-    page.click("#btnWorld")
+    # globe: the view the page opens on, with the "available now" marker on the region
+    page.click("#btnGlobe")
     page.wait_for_timeout(2600)
     page.wait_for_function("window.__portal.map.areTilesLoaded()", timeout=60000)
-    w = page.evaluate("""() => { const p = window.__portal, m = p.map, lid = [...p.dnCache.keys()].filter((k) => +k.split('/')[1] < 3);
-        const dn = lid.length ? p.dnCache.get(lid[lid.length - 1]) : null; let n = 0; if (dn) for (const v of dn) if (v !== 255) n++;
-        return {zoom: m.getZoom(), proj: JSON.stringify(m.getProjection ? m.getProjection() : null), coarse: lid.length, valid: n,
-                land: !!m.getLayer('land'), sat: m.getPaintProperty('sat', 'raster-opacity') !== undefined}; }""")
-    check(w["zoom"] < 1.6 and w["coarse"] > 0 and w["valid"] > 20 and w["land"],
-          f"world view: zoom {w['zoom']:.2f}, {w['coarse']} coarse tile(s) built in the browser with {w['valid']} coloured px, grey land layer {w['land']}")
-    check("globe" not in (w["proj"] or ""), f"flat projection ({w['proj']})")
+    g = page.evaluate("""() => { const m = window.__portal.map;
+        return {zoom: m.getZoom(), proj: JSON.stringify(m.getProjection ? m.getProjection() : null), land: !!m.getLayer('land'),
+                well: getComputedStyle(document.querySelector('.mapwrap')).backgroundColor}; }""")
+    check(abs(g["zoom"] - 1.7) < 0.05 and "globe" in (g["proj"] or "") and g["land"] and g["well"] == "rgb(15, 19, 24)",
+          f"globe view: zoom {g['zoom']:.2f}, projection {g['proj']}, dark well {g['well']}")
     mk = page.evaluate("""() => { const m = window.__portal.map, r = document.querySelector('.pulse').getBoundingClientRect(), box = m.getContainer().getBoundingClientRect();
-        const p = m.project([127.6, 37.8]); const l = document.querySelector('.pulse-label').getBoundingClientRect();
-        return {dx: r.left + r.width / 2 - box.left - p.x, dy: r.top + r.height / 2 - box.top - p.y, labelLeft: l.left - box.left, labelRight: l.right - box.left, w: box.width}; }""")
-    check(abs(mk["dx"]) < 40 and abs(mk["dy"]) < 25 and mk["labelLeft"] > 0 and mk["labelRight"] < mk["w"],
-          f"'available now' marker sits by the peninsula and its label is inside the map (offset {mk['dx']:.0f}, {mk['dy']:.0f} px)")
-    page.screenshot(path=str(shots / "06_world.png"))
+        const p = m.project([127.5, 37.4]); const l = document.querySelector('.pulse-label').getBoundingClientRect();
+        return {dx: r.left + r.width / 2 - box.left - p.x, dy: r.top + r.height / 2 - box.top - p.y, labelLeft: l.left - box.left, labelRight: l.right - box.left, w: box.width,
+                shown: getComputedStyle(document.querySelector('.pulse').parentElement).display !== 'none'}; }""")
+    check(mk["shown"] and abs(mk["dx"]) < 12 and abs(mk["dy"]) < 12 and mk["labelLeft"] > 0 and mk["labelRight"] < mk["w"],
+          f"'available now' marker sits on the peninsula and its label is inside the map (offset {mk['dx']:.0f}, {mk['dy']:.0f} px)")
+    page.screenshot(path=str(shots / "06_globe.png"))
+    # zoomed all the way out, the map asks for tiles coarser than the archive holds; they are averaged in the browser
+    page.evaluate("window.__portal.map.jumpTo({zoom: 1.2})")
+    page.wait_for_timeout(1500)
+    page.wait_for_function("window.__portal.map.areTilesLoaded()", timeout=60000)
+    w = page.evaluate("""() => { const p = window.__portal, lid = [...p.dnCache.keys()].filter((k) => +k.split('/')[1] < 3);
+        const dn = lid.length ? p.dnCache.get(lid[lid.length - 1]) : null; let n = 0; if (dn) for (const v of dn) if (v !== 255) n++;
+        return {zoom: p.map.getZoom(), coarse: lid.length, valid: n}; }""")
+    check(w["coarse"] > 0 and w["valid"] > 20, f"far out (zoom {w['zoom']:.2f}): {w['coarse']} coarse tile(s) built in the browser with {w['valid']} coloured px")
     page.evaluate("window.__portal.map.jumpTo({center: [5, 46], zoom: 2.2})")
     page.wait_for_timeout(1200)
     pt = page.evaluate("(() => { const p = window.__portal.map.project([2.35, 46.5]); return [p.x, p.y]; })()")

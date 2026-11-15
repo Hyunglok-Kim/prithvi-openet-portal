@@ -11,7 +11,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600&family=Source+Serif+4:opsz,wght@8..60,500;8..60,600&display=swap" />
 <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5.24.1/dist/maplibre-gl.css" />
-<link rel="stylesheet" href="css/portal.css?v=20261115h" />
+<link rel="stylesheet" href="css/portal.css?v=20261115i" />
 </head>
 <body>
 
@@ -63,15 +63,18 @@
 
         <div class="map-ui map-tl" id="coverCard">
           <p class="mini-h">Coverage</p>
+          <!-- A fixed picture, made by pipeline/make_coverage_map.py from the tiles: regions with data in colour, all other land grey. -->
+          <img class="cov-map" id="covMap" src="assets/coverage-world.svg?v=20261115i" width="720" height="316" draggable="false"
+               alt="World map. The Korean Peninsula is coloured and ringed; all other land is grey." />
           <p class="cov-row"><span class="sw sw-avail"></span><span><b>Available now</b> · Korean Peninsula</span></p>
-          <p class="cov-row"><span class="sw sw-demand"></span><span><b>Not yet</b> · grey land is produced on request</span></p>
+          <p class="cov-row"><span class="sw sw-demand"></span><span><b>On request</b> · any other land area</span></p>
           <button class="primary small" id="btnRequestHere">Request a region</button>
         </div>
 
         <div class="map-ui map-tr">
           <select id="jump" class="mbtn jump" aria-label="Go to a city" title="Regional view around a city"><option value="">Go to a city…</option></select>
           <button class="mbtn" id="btnHome" title="Fit the Korean Peninsula">Peninsula</button>
-          <button class="mbtn" id="btnWorld" title="Zoom out to the whole world">World</button>
+          <button class="mbtn" id="btnGlobe" title="Zoom out to the globe">Globe</button>
           <label class="mbtn slider" title="Opacity of the ET layer">
             <span>Opacity</span>
             <input type="range" id="opacity" min="0" max="100" value="100" aria-label="Layer opacity" />
@@ -364,7 +367,7 @@
 
 <script src="https://unpkg.com/maplibre-gl@5.24.1/dist/maplibre-gl.js"></script>
 <script src="https://unpkg.com/pmtiles@4.5.0/dist/pmtiles.js"></script>
-<script src="js/config.js?v=20261115h"></script>
-<script src="js/app.js?v=20261115h"></script>
+<script src="js/config.js?v=20261115i"></script>
+<script src="js/app.js?v=20261115i"></script>
 </body>
 </html>

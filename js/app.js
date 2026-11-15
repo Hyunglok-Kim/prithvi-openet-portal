@@ -28,8 +28,7 @@ const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct
 const MONL = ["January", "February", "March", "April", "May", "June", "July", "August", "September",
               "October", "November", "December"];
 const TILE = 256;
-const OCEAN = "#E7EBEC", LAND = "#C9C6BC", LAND_EDGE = "#B3B0A5";       // the world view: neutral water, grey land
-const WORLD = [[-180, -58], [180, 80]];          // the opening view: the whole world, flat, without the polar margins
+const GLOBE_ZOOM = 1.7;          // the opening view: the globe, turned to the region that has data
 const FIXED_RANGE = { month: [0, 180], clim: [0, 180], annual: [400, 1100] };
 /* Magnitude ramp: yellow-green-blue, lightness falling monotonically (analogous hues, so it
    stays ordered for colour-blind readers and in grayscale). Always shown with its scale. */
@@ -208,8 +207,9 @@ function getDN(id, z, x, y) {
   pending.set(key, p);
   return p;
 }
-/* The archives start at zoom 3; the world view needs zoom 0-2. Those few tiles are averaged here from
-   the zoom-3 tiles, with the pipeline's own rule: a pixel is kept when a quarter of it has data. */
+/* The archives start at zoom 3; with the globe zoomed far out the map asks for zoom 0-2. Those few tiles
+   are averaged here from the zoom-3 tiles, with the pipeline's own rule: a pixel is kept when a quarter of
+   it has data. Without this the data would vanish from the globe just when the whole Earth is in view. */
 async function coarserDN(id, z, x, y) {
   const zs = CAT.zoom.min, f = 2 ** (zs - z), b = CAT.bounds;
   const lo = lngLatToTile(b[0], b[3], zs), hi = lngLatToTile(b[2], b[1], zs);
@@ -312,23 +312,22 @@ function initMap() {
     container: "map",
     style: {
       version: 8,
+      projection: { type: "globe" },
+      sky: { "atmosphere-blend": ["interpolate", ["linear"], ["zoom"], 0, 1, 4.5, 1, 6.5, 0] },
       sources: {
-        /* Imagery is context for looking closely, so it only starts once the view is regional (tile zoom 5,
-           map zoom 3.5). The world view stays a plain coverage map: grey land, colour where data exists. */
-        sat: { type: "raster", tileSize: 256, minzoom: 5, maxzoom: 18,
+        sat: { type: "raster", tileSize: 256, maxzoom: 18,
                tiles: ["https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"],
                attribution: "Imagery © Esri, Maxar, Earthstar Geographics" },
         et: { type: "raster", tileSize: 256, minzoom: 0, maxzoom: CAT.zoom.max, bounds: CAT.bounds,
               tiles: [tileURL()], attribution: "ET: Prithvi-OpenET-Tower, HydroAI Lab (GIST)" },
       },
       layers: [
-        { id: "bg", type: "background", paint: { "background-color": OCEAN } },
-        { id: "sat", type: "raster", source: "sat", paint: { "raster-saturation": -0.3, "raster-brightness-max": 0.92,
-            "raster-opacity": ["interpolate", ["linear"], ["zoom"], 3.5, 0, 4.6, 1] } },
+        { id: "bg", type: "background", paint: { "background-color": "#0F1318" } },
+        { id: "sat", type: "raster", source: "sat", paint: { "raster-saturation": -0.3, "raster-brightness-max": 0.92 } },
         { id: "et", type: "raster", source: "et", paint: { "raster-opacity": 1, "raster-fade-duration": 150 } },
       ],
     },
-    center: [10, 28], zoom: 0.8, minZoom: -1, maxZoom: 14.5,
+    center: [127.6, 30], zoom: GLOBE_ZOOM, minZoom: 1.2, maxZoom: 14.5,
     attributionControl: { compact: true }, dragRotate: false, pitchWithRotate: false, touchPitch: false,
   });
   map.touchZoomRotate.disableRotation();
@@ -342,34 +341,41 @@ function initMap() {
     setTimeout(() => $("#boot").remove(), 500);
     addMarkers();
     loadLand();
-    const pad = { top: 46, bottom: 76, left: 40, right: 40 };
     const b = [[CAT.bounds[0], CAT.bounds[1]], [CAT.bounds[2], CAT.bounds[3]]];
-    /* Open on the whole world — grey except where data exists — then move in to that region. */
-    if (Q.get("intro") === "0" || REDUCED) map.fitBounds(b, { padding: pad, duration: 0 });
-    else { map.fitBounds(WORLD, { duration: 0 }); setTimeout(() => map.fitBounds(b, { padding: pad, duration: 2800 }), 1500); }
+    /* Open on the globe, then move in to the region that has data. */
+    if (Q.get("intro") === "0" || REDUCED) map.fitBounds(b, { padding: fitPadding(), duration: 0 });
+    else setTimeout(() => map.fitBounds(b, { padding: fitPadding(), duration: 2600 }), 900);
   });
   map.on("zoom", onZoom);
   map.on("mousemove", onHover);
   map.on("mouseout", () => { $("#roVal").textContent = ""; });
   map.on("click", onClick);
 }
+/* Room to leave for the panels over the map when a region is fitted. On a narrow map the coverage card
+   would sit on the region, so the region is fitted to the right of it. */
+function fitPadding() {
+  const card = $("#coverCard"), narrow = map.getContainer().clientWidth < 820 && card.offsetParent !== null;
+  return { top: 46, bottom: 76, left: narrow ? card.offsetLeft + card.offsetWidth + 12 : 40, right: 40 };
+}
 async function loadLand() {
   /* Natural Earth 1:50m land (public domain), cut at the antimeridian. A "stitched" outline such as
-     world-atlas draws bands across the map here, because MapLibre treats longitudes as planar.
-     It sits under the imagery, so it shows only in the world view, before the imagery fades in. */
+     world-atlas draws rings around the pole here, because MapLibre treats longitudes as planar.
+     On the globe it lifts the continents a little off the imagery and fades out on the way in; it
+     also answers whether a click fell on land (onLand). */
   try {
     landGeo = await (await fetch(new URL("assets/land-50m.json", location.href))).json();
-    map.addSource("land", { type: "geojson", data: landGeo, tolerance: 0.2 });
-    map.addLayer({ id: "land", type: "fill", source: "land", paint: { "fill-color": LAND } }, "sat");
-    map.addLayer({ id: "land-line", type: "line", source: "land", paint: { "line-color": LAND_EDGE, "line-width": 0.5 } }, "sat");
+    map.addSource("land", { type: "geojson", data: landGeo });
+    const fade = (a) => ["interpolate", ["linear"], ["zoom"], 2.6, a, 5.2, 0];
+    map.addLayer({ id: "land", type: "fill", source: "land", paint: { "fill-color": "#F0EEE6", "fill-opacity": fade(0.17) } }, "et");
+    map.addLayer({ id: "land-line", type: "line", source: "land", paint: { "line-color": "#F0EEE6", "line-width": 0.7, "line-opacity": fade(0.5) } }, "et");
   } catch (e) { console.warn("[land outline]", e.message); }
 }
 let cityMarkers = [], pulse = null;
 function addMarkers() {
-  const c = [(CAT.bounds[0] + CAT.bounds[2]) / 2 - 2.6, (CAT.bounds[1] + CAT.bounds[3]) / 2 - 0.4];      // just west of the peninsula, label to its left
+  const c = [(CAT.bounds[0] + CAT.bounds[2]) / 2 - 0.6, (CAT.bounds[1] + CAT.bounds[3]) / 2 - 0.6];      // on the region, its label to the right
   /* No position on the root: MapLibre makes a marker absolute, and overriding that turns it into a
      full-width block whose "centre" is half the map away. */
-  const node = el("div", { style: "width:14px;height:14px" }, [el("div", { class: "pulse" }), el("div", { class: "pulse-label" }, "Korean Peninsula · available now")]);
+  const node = el("div", { style: "width:14px;height:14px" }, [el("div", { class: "pulse" }), el("div", { class: "pulse-label" }, "Available now")]);
   pulse = new maplibregl.Marker({ element: node, anchor: "center" }).setLngLat(c).addTo(map);
   cityMarkers = CITIES.map(([name, lng, lat]) =>
     new maplibregl.Marker({ element: el("div", {}, el("span", { class: "city" }, name)), anchor: "bottom" }).setLngLat([lng, lat]).addTo(map));
@@ -384,7 +390,7 @@ function onZoom() {
   const res = 40075016.686 * Math.cos(map.getCenter().lat * Math.PI / 180) / (TILE * 2 ** zc);
   const step = zc <= 8 ? 0 : zc < CAT.zoom.max ? 1 : 2;
   document.querySelectorAll("#steps span").forEach((s) => s.classList.toggle("on", +s.dataset.step === step));
-  $("#roRes").textContent = z < 2.6 ? "World view — zoom in to see the data" : `${fmtRes(res)} per pixel${zc === CAT.zoom.max ? " (native)" : ""}`;
+  $("#roRes").textContent = z < 2.6 ? "Zoom in to see the data" : `${fmtRes(res)} per pixel${zc === CAT.zoom.max ? " (native)" : ""}`;
   if (map.getLayer("et")) map.setPaintProperty("et", "raster-resampling", z > CAT.zoom.max - 0.4 ? "nearest" : "linear");
 }
 let hoverRAF = 0;
@@ -1002,8 +1008,8 @@ function wire() {
     if (e.target.value !== "" && c) map.flyTo({ center: [c[1], c[2]], zoom: 9.2, duration: 1600 });
     e.target.value = "";
   };
-  $("#btnHome").onclick = () => map.fitBounds([[CAT.bounds[0], CAT.bounds[1]], [CAT.bounds[2], CAT.bounds[3]]], { padding: { top: 46, bottom: 76, left: 40, right: 40 }, duration: 1400 });
-  $("#btnWorld").onclick = () => map.fitBounds(WORLD, { duration: 1800 });
+  $("#btnHome").onclick = () => map.fitBounds([[CAT.bounds[0], CAT.bounds[1]], [CAT.bounds[2], CAT.bounds[3]]], { padding: fitPadding(), duration: 1400 });
+  $("#btnGlobe").onclick = () => map.flyTo({ center: [127.6, 30], zoom: GLOBE_ZOOM, duration: 1800 });
   $("#srReset").onclick = () => { state.pick = null; recordModel = null; $("#recordBox").hidden = true; if (pickMarker) pickMarker.remove(); renderPeninsulaSeries(); };
   $("#rcTableBtn").onclick = (e) => { const t = $("#rcTable"); t.hidden = !t.hidden; e.currentTarget.textContent = t.hidden ? "Show table" : "Hide table"; e.currentTarget.setAttribute("aria-expanded", String(!t.hidden)); sendHeight(); };
   $("#rcCsv").onclick = () => download("prithvi_openet_pixel_record.csv", recordCSV(), "text/csv");

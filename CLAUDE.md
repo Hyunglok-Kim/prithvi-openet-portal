@@ -1,9 +1,10 @@
 # Prithvi-OpenET-Tower Data Portal — working notes
 
-Web portal for 30 m monthly evapotranspiration (ET) maps made with Prithvi-OpenET-Tower. It shows
-the world with only the regions that have ready-made data in colour, zooms from a whole region down
-to the native 30 m, and takes requests for other regions. `README.md` is the short introduction;
-this file is the detail a maintainer (human or agent) needs before changing anything.
+Web portal for 30 m monthly evapotranspiration (ET) maps made with Prithvi-OpenET-Tower. It opens
+on a globe turned to the region that has ready-made data, zooms from a whole region down to the
+native 30 m, shows on a small fixed world map where data exists, and takes requests for other
+regions. `README.md` is the short introduction; this file is the detail a maintainer (human or
+agent) needs before changing anything.
 
 **Status (November 2026): prototype.** The site is not served publicly yet and the tiles and
 GeoTIFFs are not published. Lab-internal operations (storage paths, how the lab hosts its preview
@@ -16,8 +17,10 @@ index.html          one page: Explore / Download / Use in code / About the data 
 css/portal.css      warm-light theme shared with the lab's Hampyeong portal (ivory, terracotta, Source Serif 4 + Archivo)
 js/config.js        deployment settings (data location, public GeoTIFF address, request email and endpoint)
 js/app.js           the app (MapLibre GL + PMTiles + SVG charts), one IIFE, no build step
-assets/             Natural Earth land outlines, cut at the antimeridian (public domain)
-pipeline/           tile and catalog builders (Python + GDAL), run where the GeoTIFFs live
+assets/             land-50m.json — Natural Earth land, cut at the antimeridian (public domain)
+                    coverage-world.svg — the small world map in the coverage card (a generated file)
+pipeline/           tile and catalog builders (Python + GDAL), run where the GeoTIFFs live;
+                    make_coverage_map.py draws the coverage picture from the tiles
 worker/             request-form backend (Cloudflare Worker): src/index.js, wrangler.toml, test.mjs
 tests/smoke.py      headless-browser test (Playwright); tile_ref.json holds tile checksums to compare against
 dev_server.py       local preview with HTTP Range support
@@ -78,6 +81,25 @@ pipeline/run_layers.sh catalog                                     # only rebuil
   17.6 GB: 16.2 GB monthly (981,615 tiles) plus 1.4 GB for the climatology layers.
 - When copying tiles to a host, copy `catalog.json` last: the app lists whatever the catalog names.
 
+## The coverage picture
+
+The coverage card on the map holds a small world map that is a picture, not a map: an `<img>` of
+`assets/coverage-world.svg`. Land is grey, regions with ready-made data are coloured, and a region
+too small to see at that size gets a ring. It answers "where does data exist?" for the whole Earth
+at once, which a globe cannot do, and nothing in it reacts to the pointer.
+
+```bash
+python pipeline/make_coverage_map.py \
+    --region "Korean Peninsula=/path/to/out/clim/KP_ET_clim_annual.pmtiles"     # needs numpy, Pillow, pmtiles
+```
+
+- One `--region NAME=FILE` per region with data. The outline is read from the tiles (the pixels
+  that hold a value, at zoom 5), so the picture shows the data's own footprint, not a box.
+- Equal Earth projection (equal-area, so sizes are honest), no Antarctica (HLS does not cover it).
+- After regenerating: bump the `?v=` on the `<img>` in `index.html`, and update its `alt` text and
+  the key under it if the list of regions changed. The smoke test checks that the mark sits where
+  the region is on the Earth.
+
 ## Running it
 
 ```bash
@@ -92,7 +114,7 @@ session cookie, pass it to the smoke test as `SMOKE_COOKIE="name=value"`.
 
 URL parameters the app understands: `embed=1` (fixed map height, reports its height to the parent
 frame), `data=/path/` (same-origin tile location), `nas=/path` (a storage path to show in Download
-and Code when there are no public links), `intro=0` (skip the fly-in from the world view),
+and Code when there are no public links), `intro=0` (skip the fly-in from the globe),
 `tab=download|code|about|request`. Bump the `?v=` on the script and style tags in `index.html` when
 you change them.
 
@@ -146,6 +168,9 @@ Turnstile to the form and verify the token in the Worker.
   statements stay in the About tab.
 - **Basemap without labels.** Satellite imagery plus our own city names; public label layers bring
   place-name disputes with them.
+- **The globe is the main view; coverage is a fixed picture.** A flat, interactive grey world map
+  was tried as the main view and rejected (November 2026). The map stays a globe, and "where data
+  exists" is the small image in the coverage card.
 - **The request endpoint is never taken from the page address.** A link must not be able to
   redirect what people type; it is set in `js/config.js` only.
 
@@ -162,9 +187,15 @@ Turnstile to the form and verify the token in the Worker.
 - **Land outlines must be cut at the antimeridian.** The usual `world-atlas` TopoJSON is stitched
   for d3 and draws rings around the pole in MapLibre. The files in `assets/` are the planar-safe ones.
 - **MapLibre rewrites a marker element's own opacity on the globe.** Fade an inner element instead.
+- **Never set `position` on a marker's root element.** MapLibre makes it absolute; overriding that
+  turns the marker into a full-width block whose "centre" is half the map away.
 - **`form.name` is the form's own property.** Read fields with `form.elements.namedItem("name")`.
-- **The ET source has `minzoom` 3.** Below that tile zoom nothing is drawn, so the widest view must
-  not ask for tiles coarser than z3.
+- **The archives start at zoom 3 but the globe asks for less.** Zoomed all the way out the map wants
+  zoom-2 tiles. `coarserDN` averages them in the browser from zoom 3, with the pipeline's 25 % rule;
+  without it the data vanishes from the globe just when the whole Earth is in view.
+- **Panels over the map follow the map's width, not the window's.** In the two-column layout a
+  1,100 px window leaves a 650 px map. A container query on `.mapwrap` drops the opacity slider and
+  the resolution pill there, and `fitPadding()` fits the region to the right of the coverage card.
 - **A full-record click costs one small request per month** (160) once each archive's directory is
   cached. If that feels slow on public hosting, build a per-pixel time-series store instead of
   reading 160 archives.

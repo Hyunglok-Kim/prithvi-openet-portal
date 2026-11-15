@@ -11,8 +11,9 @@ publicly. The model code is at
 
 ## What it does
 
-- Opens on the whole world: land is grey except where ready-made maps exist (the Korean Peninsula,
-  April 2013 onward).
+- Opens on a globe turned to the region with ready-made maps (the Korean Peninsula, April 2013
+  onward). A small fixed world map beside it shows where data exists; all other land is grey and
+  can be requested.
 - Click to zoom from a regional overview (about 2 km per pixel) to 120 m and then the native 30 m.
 - Three layers: mean annual ET, the mean seasonal cycle, and any single month. Months outside the
   model's 2016–2024 training period are flagged.
@@ -30,8 +31,8 @@ exact, and it needs nothing but a file host.
 
 ```
 index.html, css/, js/     the portal
-assets/                   land outline (Natural Earth, public domain)
-pipeline/                 GeoTIFF → numeric tile pyramid + catalog (Python, GDAL)
+assets/                   land outline (Natural Earth, public domain) and the coverage picture
+pipeline/                 GeoTIFF → numeric tile pyramid + catalog (Python, GDAL); coverage picture
 worker/                   request-form backend (Cloudflare Worker)
 tests/                    headless-browser smoke test (Playwright)
 ```
