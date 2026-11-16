@@ -1,8 +1,8 @@
 # Prithvi-OpenET-Tower Data Portal — working notes
 
 Web portal for 30 m monthly evapotranspiration (ET) maps made with Prithvi-OpenET-Tower. It opens
-on the whole globe, turned to the region that has ready-made maps; the rest of the land carries a
-named background layer from another global ET product. It zooms from a whole region down to the
+on the whole globe, which turns into place facing the region that has ready-made maps; the rest of
+the land carries a named background layer from another global ET product. It zooms from a whole region down to the
 native 30 m, says at the top of the map when the view has gone past what is published at a place,
 shows on a small fixed world map where data exists, and takes requests for other regions.
 `README.md` is the short introduction; this file is the detail a maintainer (human or agent) needs
@@ -69,16 +69,71 @@ tiles sit one level ahead):
 
 | Stage | Map zoom | Tile zoom | Ground size at 37°N |
 |---|---|---|---|
-| Globe (the opening view) | 1.7 | 3 | ≈ 15 km |
+| Globe (the opening view) | ≈ 1.4 (0.9 on a phone) | 2 | ≈ 31 km |
 | Overview (whole peninsula) | ≈ 4.9 | 6 | ≈ 1.9 km |
 | Regional (first click) | 9.2 | 10 | ≈ 120 m |
 | Native (second click) | 11.7 | 12 | ≈ 30 m |
 
-The page opens on the globe and stays there; nothing moves until the visitor does. A click on the
-region with maps goes to the regional view and then, where the tiles on hand reach it, to the
+The page opens on the globe (next section) and stays there until the visitor moves in. A click on
+the region with maps goes to the regional view and then, where the tiles on hand reach it, to the
 native one. A click on land anywhere else moves in on that place in two steps (map zoom 4.6, then
 about 7.5), as far as the background has anything to show; the next click there offers to request
 the place.
+
+## The opening globe
+
+The view the page opens on is set up like the lab's HDCA portal, so the two globes are the same size
+on every screen (`GLOBE` and `globeView()` in `app.js`); only the centre differs, because our maps
+are in Korea. How the page gets there (`INTRO`, `runOpening()`) is the same kind of opening as
+HDCA's — a sweep from 140° to the west, growing from about half size — which the lab head asked for
+on both portals ("more dynamic on entering from the data card"). One difference is deliberate:
+HDCA's globe keeps turning slowly afterwards, ours comes to rest, because it has somewhere to be —
+facing the region that has our maps, with the mark on it.
+
+- **Sized to the map box.** The globe is about 140 px × 2^zoom across, so the zoom is the one for
+  80 % of the box's shorter side, never more than 1.55. A fixed desktop zoom spilled the globe out
+  of a phone-width map (about 350 px). The "Globe" button returns to the same view.
+- **Same size as HDCA's on screen.** Those numbers hold for a globe centred on 18°N. MapLibre keeps
+  the scale at the centre of a globe equal to the flat map's there, so the globe is drawn larger
+  by 1/cos(latitude of its centre). Ours is centred on 30°N, so log2(cos 18° / cos 30°) = 0.135
+  of zoom is taken off. Measured on screen, the two portals' globes then agree to a pixel (408 px
+  in a 718 px embedded box, 295 px on a 390 px phone).
+- **Beside the coverage card.** HDCA's map has no card at its top left; ours does, with the legend
+  under it. In a box narrower than about 990 px a globe in the middle would run under them (half of
+  it at a 1,100 px window), so it is moved right until it is just clear of the card, and where
+  even that is too wide it is sized to the part of the box beside the card. The shift is MapLibre
+  camera padding, which stays set for every later move; so all other camera calls go through `fly`
+  (takes the padding off as it goes) and `boundsCamera` (works out a fit as if it were off).
+- **The opening.** The globe comes in turning: it starts 140° to the west and 22° to the south (over
+  West Africa) at half its size, and sweeps across Africa and Asia to settle on Korea in 3.6 s,
+  off the mark quickly and then slowing for a long time. As it slows the panels over the map come
+  up one after another, then the mark lands on the region; the cards beside the map rise in turn
+  from the start. The numbers are in `INTRO`; the CSS part is driven by classes on `<html>`
+  (`opening`, `opened`, `arrived`, `entered`), all taken off again at the end. The coarse tiles of
+  our layers for the whole globe are fetched before the turn starts, so the far side is in hand
+  when it comes round. There is no fly-in to the peninsula: the turn ends on the whole globe.
+- **It runs on entry wherever the globe can be seen, and otherwise waits to be seen.** Two points
+  of the map decide (`whenInView`; inside the lab site's frame the browser still reports what the
+  visitor really sees). If the middle of the map (`#mapMid`, the middle of the globe) is on screen
+  as the page opens, the turn starts at once — also in a laptop window on the lab site, where the
+  lower part of the map is still below the fold and under the site's logo strip: the visitor has
+  just clicked the dataset card and should see the Earth move. If it is not (a short window), the
+  turn waits until a point two thirds of the way down the map (`#mapLow`) has been scrolled into
+  view, when most of the opening globe is on screen. A phone-width map (under 560 px) always waits
+  for that lower point: the header fills the first screen there, the visitor scrolls at once, and
+  a turn begun with a sliver of the globe in view would be over before they arrive. While it waits
+  the panels are already there — an empty dark box would look broken — and only the globe and the
+  mark perform (`waiting`). On the lab site the map starts 360 px down the page, so on a laptop or
+  desktop the turn runs on entry in windows about 720 px tall or more.
+- **Off switches.** Reduced motion, `intro=0` and `view=region` open at rest. The visitor's first
+  drag or scroll takes over from the turn.
+- `minZoom` is 0.5, as on HDCA (a phone's globe view is below zoom 1); during the turn it is 0,
+  because the turn starts further out than a visitor may go.
+- **On a phone-width map** (container query, 560 px): the readout sits under the controls, because
+  none of its texts fits beside the legend; the legend drops its histogram and so ends below the
+  globe instead of covering it; `fitPadding()` fits the peninsula between the readout and the
+  legend. The map keeps its plain height there (the adjustments for the logo strip and the notice
+  apply from 761 px up), which is HDCA's height.
 
 ## The background layer
 
@@ -245,7 +300,12 @@ The smoke test adapts to what it finds: with a full set it expects the second cl
 native 30 m; with a reduced copy it expects the page to say so, to stop at the finest level and to
 bring up the note; with sample areas it expects 30 m there, holding the full set's numbers
 (`tile_ref.json` has a window inside each area); with a background it expects every value read
-from it to carry the product's name.
+from it to carry the product's name. It also checks the opening (where the turn starts, that it
+ends on the globe view with the panels and the mark in place and none of its classes left), and
+in a phone-sized window that the globe fits its box, that the readout is clear of the legend, that
+"Peninsula" shows the region above the legend, and that the turn waits until the map is scrolled
+into view; and, in a window that ends between the two points the opening looks at, that it runs at
+once without a scroll.
 
 `python -m http.server` will not do: PMTiles needs HTTP Range requests. When a copy sits behind a
 session cookie, pass it to the smoke test as `SMOKE_COOKIE="name=value"`.
@@ -253,9 +313,10 @@ session cookie, pass it to the smoke test as `SMOKE_COOKIE="name=value"`.
 URL parameters the app understands: `embed=1` (fixed map height, reports its height to the parent
 frame), `hidefooter=1` (no logo strip: the page that embeds the portal draws its own),
 `data=/path/` (same-origin tile location), `nas=/path` (a storage path to show in Download and
-Code when there are no public links), `view=region` (open on the region with maps instead of the
-globe), `tab=download|code|about|request`. Bump the `?v=` on the script and style tags in
-`index.html` when you change them.
+Code when there are no public links), `intro=0` (the globe opens at rest, without the opening),
+`view=region` (open on the region with maps instead of the globe),
+`tab=download|code|about|request`. Bump the `?v=` on the script and style tags in `index.html`
+when you change them.
 
 ## Request backend (Cloudflare Worker)
 
@@ -302,6 +363,13 @@ and a logo bar; the page's `message` listener sizes the frame from the portal's 
 posts. To edit it again: Webflow Designer → Pages → Data → Navigator → Code Embed → "Edit code
 embed". The editor is CodeMirror, so copy the text out, patch it, and paste it back.
 
+That embed is one block shared by every dataset on the page (the hub cards, the panels of the
+other portals, the routing script), and other people edit it for their own panels. **Start every
+edit from the editor's current text, never from a saved copy**: a copy made before somebody
+else's edit silently undoes that edit when it is pasted. It nearly happened in November 2026 — a
+copy of the page taken before this panel was added would have put the old static ET panel back.
+After an edit, check all three cards on the live page, not only your own.
+
 Left:
 1. **The full 30 m tiles in public**, at publication. Needs a host with HTTP Range and CORS (see
    "The reduced public copy"). Then `dataBase` in `js/config.js`; the notes about the finest level
@@ -341,8 +409,17 @@ Left:
 - **The globe is the main view; coverage is a fixed picture.** A flat, interactive grey world map
   was tried as the main view and rejected (November 2026). The map stays a globe, and "where data
   exists" is the small image in the coverage card.
-- **The page opens on the whole globe and does not move by itself.** An automatic fly-in to the
-  peninsula was tried and dropped (November 2026): the first thing a visitor sees is the Earth.
+- **The page opens on the whole globe.** The only motion of its own is the opening, which ends on
+  the globe. An automatic fly-in to the peninsula was tried and dropped (November 2026): the first
+  thing a visitor sees is the Earth.
+- **The opening leaves nothing behind.** Its classes come off `<html>` when it is done and its
+  animations fill backwards only. Otherwise the cards rise again each time a tab is reopened, and a
+  panel that fades for another reason (the coverage card's `.dim`) is stuck at the animation's end.
+- **The opening globe is never cut by its box.** Check 390 px (a phone, embedded and on its own),
+  1440 px and 2048 px or more (the lab head's display) before calling a layout change done.
+- **The opening is judged where visitors meet it: on the lab site, after a click on the dataset
+  card.** Look at it inside that page's frame, at a laptop height (about 800 px) as well as on a
+  large screen, not only at the portal's own address in a tall window.
 - **The request endpoint is never taken from the page address.** A link must not be able to
   redirect what people type; it is set in `js/config.js` only.
 
@@ -362,9 +439,10 @@ Left:
 - **Never set `position` on a marker's root element.** MapLibre makes it absolute; overriding that
   turns the marker into a full-width block whose "centre" is half the map away.
 - **`form.name` is the form's own property.** Read fields with `form.elements.namedItem("name")`.
-- **The archives start at zoom 3 but the globe asks for less.** Zoomed all the way out the map wants
-  zoom-2 tiles. `coarserDN` averages them in the browser from zoom 3, with the pipeline's 25 % rule;
-  without it the data vanishes from the globe just when the whole Earth is in view.
+- **The archives start at zoom 3 but the globe asks for less.** The opening globe (map zoom about
+  1.4) already wants zoom-2 tiles. `coarserDN` averages them in the browser from zoom 3, with the
+  pipeline's 25 % rule; without it the data vanishes from the globe just when the whole Earth is in
+  view.
 - **Report the page's own height to the embedding page, not `scrollHeight`.** Inside a frame that
   starts 3,000 px tall (hydroai.net), `scrollHeight` is never less than the frame, so the frame only
   ever grew and the page ended in a blank stretch. `sendHeight()` measures the body's box.
@@ -388,6 +466,24 @@ Left:
   cells around it, on a large high-density screen most of all. The tiles were right (they were
   compared with the native grid); the view was too far out. Hence `goFine` goes in to at least
   3 screen pixels per native pixel.
+- **The globe's size on screen depends on where it is centred.** At the same zoom a globe centred
+  on 30°N is 1.1 times as wide as one centred on 18°N (1/cos of the centre's latitude). Copying
+  another portal's zoom is not copying its size; `globeView()` corrects for it.
+- **Camera padding stays set.** `easeTo`/`flyTo`/`jumpTo` with `padding` move the globe sideways,
+  and MapLibre keeps that padding for every later move; `cameraForBounds` adds it to the padding it
+  is given. Hence `fly` and `boundsCamera`. Without them the peninsula fit and the 30 m areas come
+  out off-centre after a visit to the globe view on a narrower window.
+- **A transition beats an animation.** The coverage card has `transition: opacity` for its `.dim`.
+  When the class that hid it during the opening came off, that transition ran first and the
+  animation then took over from a lower opacity: a flicker. `transition: none` while it rises.
+- **The opening did not run on a laptop.** It first waited for a point two thirds of the way down
+  the map to be on screen. At the portal's own address that is always so; inside the lab site's
+  frame the map starts 360 px down the page, and in a window under about 800 px tall the page
+  just sat there with a small still globe until the visitor scrolled. Hence the two points: the
+  middle of the map decides on entry, the lower point only after a wait.
+- **A click from the globe went straight into a 30 m area.** "A click beside a square is meant for
+  the area" applied below zoom 4.2 too, where the squares are not shown and the whole peninsula is
+  a few pixels wide. It applies only where the squares are on screen.
 - **`tileZoom()` is capped at the source's top zoom, not the copy's.** With sample areas the source
   goes to zoom 12 while most of the map is zoom-10 cells enlarged; what the numbers stand for at a
   place is `topZoomAt()`, and every label asks that.

@@ -14,7 +14,8 @@ It adapts to the tiles it finds:
   - a background layer (catalog "background"): the rest of the globe carries another product, and
     every value read from it is shown under that product's name.
 
-Checks that the page boots without console errors and opens on the whole globe, that tiles decode to
+Checks that the page boots without console errors and opens on the whole globe — turning into place
+once, sized to the map box, on a phone too — that tiles decode to
 the exact numbers the pipeline wrote (--ref, see tests/make_tile_ref.py), that hover, click-to-zoom,
 the pixel series, the full record and its CSV, the notes about what is published where, the fixed
 coverage picture, the tabs and the request form work, and saves screenshots to look at. Exit code 1
@@ -55,11 +56,15 @@ def check(ok, msg):
 with sync_playwright() as pw:
     gl = ["--use-gl=angle", "--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--ignore-gpu-blocklist", "--enable-webgl"]
     br = getattr(pw, a.browser).launch(args=gl if a.browser == "chromium" else [])
-    ctx = br.new_context(viewport={"width": 1440, "height": 900}, device_scale_factor=1)
-    if a.cookie:
-        from urllib.parse import urlparse
-        name, _, value = a.cookie.partition("=")
-        ctx.add_cookies([{"name": name, "value": value, "domain": urlparse(a.base).hostname, "path": "/"}])
+    def new_context(**kw):
+        c = br.new_context(**kw)
+        if a.cookie:
+            from urllib.parse import urlparse
+            name, _, value = a.cookie.partition("=")
+            c.add_cookies([{"name": name, "value": value, "domain": urlparse(a.base).hostname, "path": "/"}])
+        return c
+
+    ctx = new_context(viewport={"width": 1440, "height": 900}, device_scale_factor=1)
     page = ctx.new_page()
     console, bad = [], []
     page.on("console", lambda m: console.append((m.type, m.text)))
@@ -72,6 +77,7 @@ with sync_playwright() as pw:
     def settle(ms=1500):
         """Let a move finish and its tiles arrive."""
         page.wait_for_timeout(ms)
+        page.wait_for_function("!window.__portal.map.isMoving()", timeout=60000)      # on a busy machine a flight outlasts its nominal time
         page.wait_for_function("window.__portal.map.areTilesLoaded()", timeout=60000)
         page.wait_for_timeout(300)
 
@@ -89,12 +95,34 @@ with sync_playwright() as pw:
             return {kind: window.__portal.note(), shown: !n.hidden && getComputedStyle(n).display !== 'none', text: n.innerText,
                     buttons: [...n.querySelectorAll('#znBtns button')].map((b) => b.textContent)}; }""")
 
+    # What a page says about its opening globe: where the turn starts, where it rests, how large the globe is drawn.
+    GLOBE_JS = """() => { const p = window.__portal, m = p.map, c = m.getCenter(), box = m.getContainer(), gv = p.globeView();
+        const p0 = m.project([c.lng, c.lat]), p1 = m.project([c.lng + 89, 0]);
+        return {zoom: m.getZoom(), lng: c.lng, lat: c.lat, w: box.clientWidth, h: box.clientHeight, rest: gv, opening: p.opening,
+                D: 2 * Math.hypot(p1.x - p0.x, p1.y - p0.y) / Math.sin(89 * Math.PI / 180), minZoom: m.getMinZoom(), moving: m.isMoving()}; }"""
+    AT_REST = "(() => { const p = window.__portal, m = p.map, g = p.globeView(), c = m.getCenter(); return !m.isMoving() && Math.abs(c.lng - g.center[0]) < 0.01 && Math.abs(m.getZoom() - g.zoom) < 0.01; })()"
+    IN_OPENING = "['opening', 'waiting', 'opened', 'arrived', 'entered'].some((k) => document.documentElement.classList.contains(k))"
+
     sep = "&" if "?" in a.base else "?"
     page.goto(a.base + (sep + a.query if a.query else ""), wait_until="domcontentloaded")
-    page.wait_for_function("window.__portal && window.__portal.map && window.__portal.map.loaded()", timeout=60000)
+    page.wait_for_function("window.__portal && window.__portal.map", timeout=60000)
+    op = page.evaluate("window.__portal.opening")       # how the page means to open; null when the turn is switched off
+    page.wait_for_function("window.__portal.map.loaded()", timeout=60000)
     page.wait_for_function("document.querySelector('#boot') === null", timeout=15000)
-    settle(3500)                                      # long enough for an automatic move to have started, if there were one
+    page.wait_for_function(AT_REST, timeout=20000)      # the opening turn, if any, has come to rest on the globe view
+    settle(2500)                                      # long enough for a further move to have started, if there were one
     page.screenshot(path=str(shots / "01_open_globe.png"))
+    g0 = page.evaluate(GLOBE_JS)
+    if "intro=0" not in a.query and "view=region" not in a.query:
+        page.wait_for_function("!" + IN_OPENING, timeout=15000)      # the opening has finished and tidied up after itself
+        st = page.evaluate("""() => { const o = (q) => +getComputedStyle(document.querySelector(q)).opacity;
+            return {panels: [o('#coverCard'), o('.map-tr'), o('#legend'), o('#readout')], mark: o('.pulse'), minZoom: window.__portal.map.getMinZoom()}; }""")
+        check(op is not None and op["turn"] >= 90 and abs(op["from"]["center"][0] - (g0["rest"]["center"][0] - op["turn"])) < 0.01
+              and abs(op["from"]["center"][1] - (g0["rest"]["center"][1] - op["south"])) < 0.01
+              and abs(op["from"]["zoom"] - max(0, g0["rest"]["zoom"] - op["back"])) < 0.01,
+              f"the globe comes in turning: from {op and op['turn']}° to the west and {op and op['south']}° to the south, at zoom {op and op['from']['zoom']:.2f}, and settles on the globe view")
+        check(st["panels"] == [1, 1, 1, 1] and st["mark"] == 1 and st["minZoom"] == 0.5,
+              f"after the opening the panels and the mark are in place and nothing of it is left (opacities {st['panels']}, mark {st['mark']}, zoom limit {st['minZoom']})")
 
     info = page.evaluate("""() => { const p = window.__portal, m = p.map;
         return {zoom: m.getZoom(), center: m.getCenter(), cached: p.dnCache.size, layers: p.L.size,
@@ -105,8 +133,9 @@ with sync_playwright() as pw:
     notes.append(f"info {info}")
     check(info["cached"] > 0, f"numeric tiles decoded and cached ({info['cached']})")
     check(page.evaluate("window.__portal.exact()"), "tiles are decoded byte for byte (no canvas round trip)")
-    check(abs(info["zoom"] - 1.7) < 0.05 and "globe" in (info["projection"] or "") and "zoom in" in info["res"],
-          f"the page opens on the whole globe and stays there (zoom {info['zoom']:.2f}; readout: {info['res']})")
+    check(abs(g0["zoom"] - g0["rest"]["zoom"]) < 0.01 and abs(g0["lng"] - g0["rest"]["center"][0]) < 0.01 and "globe" in (info["projection"] or "")
+          and "zoom in" in info["res"] and 1.3 < g0["zoom"] < 1.6 and g0["D"] < 0.8 * min(g0["w"], g0["h"]),
+          f"the page rests on the whole globe and stays there (zoom {g0['zoom']:.2f}, globe {g0['D']:.0f} px in a {g0['w']} x {g0['h']} map; readout: {info['res']})")
     zm = page.evaluate("window.__portal.zoom")
     preview = zm["max"] < zm.get("native", zm["max"])
     bg = page.evaluate("window.__portal.bg && {name: window.__portal.bg.name, km: window.__portal.bg.cell_km, layers: Object.keys(window.__portal.bg.layers)}")
@@ -378,7 +407,7 @@ with sync_playwright() as pw:
     g = page.evaluate("""() => { const m = window.__portal.map;
         return {zoom: m.getZoom(), proj: JSON.stringify(m.getProjection ? m.getProjection() : null), land: !!m.getLayer('land'),
                 well: getComputedStyle(document.querySelector('.mapwrap')).backgroundColor}; }""")
-    check(abs(g["zoom"] - 1.7) < 0.05 and "globe" in (g["proj"] or "") and g["land"] and g["well"] == "rgb(15, 19, 24)",
+    check(page.evaluate(AT_REST) and "globe" in (g["proj"] or "") and g["land"] and g["well"] == "rgb(15, 19, 24)",
           f"globe view: zoom {g['zoom']:.2f}, projection {g['proj']}, dark well {g['well']}")
     mk = page.evaluate("""() => { const m = window.__portal.map, r = document.querySelector('.pulse').getBoundingClientRect(), box = m.getContainer().getBoundingClientRect();
         const p = m.project([127.5, 37.4]); const l = document.querySelector('.pulse-label').getBoundingClientRect();
@@ -391,9 +420,10 @@ with sync_playwright() as pw:
     page.evaluate("window.__portal.map.jumpTo({zoom: 1.2})")
     settle(1500)
     w = page.evaluate("""() => { const p = window.__portal, lid = [...p.dnCache.keys()].filter((k) => !k.startsWith('bg_') && +k.split('/')[1] < 3);
-        const dn = lid.length ? p.dnCache.get(lid[lid.length - 1]) : null; let n = 0; if (dn) for (const v of dn) if (v !== 255) n++;
-        return {zoom: p.map.getZoom(), coarse: lid.length, valid: n}; }""")
-    check(w["coarse"] > 0 and w["valid"] > 20, f"far out (zoom {w['zoom']:.2f}): {w['coarse']} coarse tile(s) built in the browser with {w['valid']} coloured px")
+        let best = 0, made = 0;                                     // tiles away from the region come out empty; count the fullest
+        for (const k of lid) { const dn = p.dnCache.get(k); if (!dn) continue; made++; let n = 0; for (const v of dn) if (v !== 255) n++; best = Math.max(best, n); }
+        return {zoom: p.map.getZoom(), coarse: made, valid: best}; }""")
+    check(w["coarse"] > 0 and w["valid"] > 20, f"far out (zoom {w['zoom']:.2f}): {w['coarse']} coarse tile(s) built in the browser, the fullest with {w['valid']} coloured px")
     page.click("#modeSeg button[data-mode=annual]")
     settle(1200)
 
@@ -472,6 +502,9 @@ with sync_playwright() as pw:
     y0 = page.evaluate("window.scrollY")
     page.click(".toc a[href='#ab-read']")
     page.wait_for_timeout(900)
+    for _ in range(20):                                             # the scroll is smooth; on a busy machine it takes longer than that
+        ya = page.evaluate("window.scrollY"); page.wait_for_timeout(250)
+        if page.evaluate("window.scrollY") == ya: break
     top, y1, vh = page.evaluate("[document.getElementById('ab-read').getBoundingClientRect().top, window.scrollY, innerHeight]")
     check(y1 > y0 + 100 and 0 <= top < vh * 0.5, f"About: section link scrolls its heading into view (scrolled {y1 - y0:.0f} px, heading at {top:.0f} px)")
     page.evaluate("window.scrollTo(0, 0)")
@@ -485,6 +518,96 @@ with sync_playwright() as pw:
     page.screenshot(path=str(shots / "16_phone.png"), full_page=True)
     over = page.evaluate("document.documentElement.scrollWidth - document.documentElement.clientWidth")
     check(over <= 1, f"no horizontal overflow at 430 px (overflow {over}px)")
+
+    # a phone: the opening globe is sized to the map box (a fixed desktop zoom spilled it out of the box), both in
+    # the page as the lab site embeds it and on its own; the readout sits clear of the legend and the controls
+    for label, q in (("embedded", "embed=1&hidefooter=1"), ("on its own", "")):
+        pc = new_context(viewport={"width": 390, "height": 844}, device_scale_factor=2, has_touch=True, is_mobile=True)
+        ph = pc.new_page()
+        ph.on("pageerror", lambda e: console.append(("pageerror", str(e))))
+        ph.goto(a.base + sep + "intro=0" + ("&" + q if q else ""), wait_until="domcontentloaded")
+        ph.wait_for_function("window.__portal && window.__portal.map && window.__portal.map.loaded()", timeout=60000)
+        ph.wait_for_function("document.querySelector('#boot') === null", timeout=15000)
+        ph.wait_for_timeout(1200)
+        g = ph.evaluate(GLOBE_JS)
+        lay = ph.evaluate("""() => { const r = (q) => { const b = document.querySelector(q).getBoundingClientRect(); return [b.left, b.top, b.right, b.bottom]; };
+            const hit = (a, b) => a[0] < b[2] && b[0] < a[2] && a[1] < b[3] && b[1] < a[3];
+            const m = r('#map'), ro = r('#readout'), lg = r('#legend'), tr = r('.map-tr');
+            return {onLegend: hit(ro, lg), onControls: hit(ro, tr), inside: ro[0] >= m[0] && ro[2] <= m[2], legendTop: lg[1] - m[1],
+                    text: document.querySelector('#roRes').textContent}; }""")
+        bottom = g["h"] / 2 + g["D"] / 2                              # the globe sits in the middle of its box
+        check(g["opening"] is None and abs(g["zoom"] - g["rest"]["zoom"]) < 0.01 and abs(g["lng"] - g["rest"]["center"][0]) < 0.01
+              and g["D"] <= 0.9 * min(g["w"], g["h"]) and g["minZoom"] <= g["zoom"],
+              f"phone, {label}: the globe fits its box ({g['D']:.0f} px across in a {g['w']} x {g['h']} map, zoom {g['zoom']:.2f}); intro=0 opens at rest")
+        check(not lay["onLegend"] and not lay["onControls"] and lay["inside"] and (not q or bottom <= lay["legendTop"] + 2),
+              f"phone, {label}: the readout ('{lay['text']}') is clear of the legend and the controls"
+              + (f"; the legend starts below the globe ({lay['legendTop']:.0f} px, globe ends at {bottom:.0f} px)" if q else ""))
+        ph.locator(".mapwrap").screenshot(path=str(shots / f"16b_phone_map_{'embedded' if q else 'alone'}.png"))
+        # 'Peninsula' fits the region between the readout and the legend, not behind the legend
+        ph.tap("#btnHome")
+        ph.wait_for_timeout(2400)
+        fit = ph.evaluate("""() => { const p = window.__portal, m = p.map, mb = m.getContainer().getBoundingClientRect();
+            const lg = document.querySelector('#legend').getBoundingClientRect(), ro = document.querySelector('#readout').getBoundingClientRect();
+            const b = m.getBounds(), sw = m.project([126.2, 34.3]), ne = m.project([129.6, 42.4]);     // the south-west tip of the mainland and the north-east
+            return {south: sw.y, west: sw.x, north: ne.y, east: ne.x, legendTop: lg.top - mb.top, readoutBottom: ro.bottom - mb.top, w: mb.width, zoom: m.getZoom()}; }""")
+        check(fit["south"] <= fit["legendTop"] + 2 and fit["north"] >= fit["readoutBottom"] - 2 and 0 <= fit["west"] and fit["east"] <= fit["w"],
+              f"phone, {label}: 'Peninsula' shows the region above the legend (its south at {fit['south']:.0f} px, the legend from {fit['legendTop']:.0f} px; zoom {fit['zoom']:.2f})")
+        ph.locator(".mapwrap").screenshot(path=str(shots / f"16c_phone_peninsula_{'embedded' if q else 'alone'}.png"))
+        pc.close()
+
+    # On a phone the map starts below the fold. The opening turn waits until the visitor has scrolled to the map, and
+    # meanwhile the panels are there (an empty dark box would look broken); then it runs and tidies up. The window is
+    # cut to end above the middle of the map, wherever that is on the copy under test.
+    pc = new_context(viewport={"width": 390, "height": 700}, device_scale_factor=2, has_touch=True, is_mobile=True)
+    ph = pc.new_page()
+    ph.on("pageerror", lambda e: console.append(("pageerror", str(e))))
+    ph.goto(a.base + sep + "intro=0", wait_until="domcontentloaded")      # first, where the middle of the map is on this page (a copy without the notice is shorter)
+    ph.wait_for_function("window.__portal && window.__portal.map && window.__portal.map.loaded()", timeout=60000)      # and let it finish: Firefox has crashed when a map was navigated away from while starting up
+    mid = ph.evaluate("document.querySelector('#mapMid').getBoundingClientRect().top")
+    ph.set_viewport_size({"width": 390, "height": int(min(700, mid - 40))})      # a window that ends above it
+    ph.goto(a.base, wait_until="domcontentloaded")
+    ph.wait_for_function("window.__portal && window.__portal.map && window.__portal.map.loaded()", timeout=60000)
+    ph.wait_for_function("document.querySelector('#boot') === null", timeout=15000)
+    ph.wait_for_timeout(1800)
+    WAIT_JS = """() => { const p = window.__portal, m = p.map, c = m.getCenter(); const o = (q) => { const e = document.querySelector(q); return e ? +getComputedStyle(e).opacity : null; };
+        return {cls: document.documentElement.className, lng: c.lng, start: p.opening && p.opening.from.center[0], legend: o('#legend'), controls: o('.map-tr'), mark: o('.pulse'),
+                mid: document.querySelector('#mapMid').getBoundingClientRect().top, low: document.querySelector('#mapLow').getBoundingClientRect().top,
+                vh: innerHeight, scrollY: scrollY, moving: m.isMoving(), minZoom: m.getMinZoom()}; }"""
+    w0 = ph.evaluate(WAIT_JS)
+    ph.evaluate("document.querySelector('.mapwrap').scrollIntoView({block: 'center'})")
+    ph.wait_for_function(AT_REST, timeout=20000)
+    ph.wait_for_function("!" + IN_OPENING, timeout=15000)
+    w1 = ph.evaluate(WAIT_JS)
+    check(w0["mid"] > w0["vh"] and "waiting" in w0["cls"] and w0["start"] is not None and abs(w0["lng"] - w0["start"]) < 0.01
+          and w0["legend"] == 1 and w0["controls"] == 1 and w0["mark"] == 0,
+          f"phone: with the map below the fold the turn waits (centre still at {w0['lng']:.1f}°E) and the panels are already there")
+    check(w1["mark"] == 1 and w1["minZoom"] == 0.5 and w1["legend"] == 1,
+          "phone: once the map is scrolled into view the globe turns into place, the mark lands and nothing of the opening is left")
+    pc.close()
+
+    # A laptop window on the lab site shows the upper part of the map only: its middle is on screen, the part below is
+    # not. The visitor has just come in, so the opening runs at once there instead of waiting for a scroll. The window
+    # is cut to end between the two points the opening looks at (embed=1 gives the map its fixed embedded height).
+    pc = new_context(viewport={"width": 1440, "height": 900}, device_scale_factor=1)
+    lp = pc.new_page()
+    lp.on("pageerror", lambda e: console.append(("pageerror", str(e))))
+    lp.goto(a.base + sep + "intro=0&embed=1&hidefooter=1", wait_until="domcontentloaded")
+    lp.wait_for_function("window.__portal && window.__portal.map && window.__portal.map.loaded()", timeout=60000)
+    pts = lp.evaluate("['#mapMid', '#mapLow'].map((q) => document.querySelector(q).getBoundingClientRect().top)")
+    lp.set_viewport_size({"width": 1440, "height": round((pts[0] + pts[1]) / 2)})
+    lp.goto(a.base + sep + "embed=1&hidefooter=1", wait_until="domcontentloaded")
+    lp.wait_for_function("window.__portal && window.__portal.map", timeout=60000)
+    try:                                                    # no waiting for the tiles here: over a slow line the turn is over before the last one is in
+        lp.wait_for_function("window.__portal.map.isMoving()", timeout=30000)      # the turn starts by itself
+    except Exception:
+        pass
+    l0 = lp.evaluate(WAIT_JS)
+    lp.wait_for_function(AT_REST, timeout=20000)
+    lp.wait_for_function("!" + IN_OPENING, timeout=15000)
+    l1 = lp.evaluate(WAIT_JS)
+    check(l0["mid"] < l0["vh"] < l0["low"] and l0["moving"] and "waiting" not in l0["cls"] and l1["scrollY"] == 0 and l1["mark"] == 1 and l1["minZoom"] == 0.5,
+          f"laptop window on the lab site: with the middle of the map on screen ({l0['mid']:.0f} px of {l0['vh']}) and its lower part not, the opening runs at once, without a scroll")
+    pc.close()
 
     # request backend: with an endpoint in config.js the form is posted as JSON (the Worker's contract);
     # a failed delivery falls back to the email draft. The endpoint here is a stand-in served by the test.

@@ -32,13 +32,54 @@ if (EMBED) document.documentElement.classList.add("embed");
 if (Q.get("hidefooter") === "1") document.body.classList.add("hide-footer");   // the page that embeds the portal draws its own logo strip
 const DATA = new URL(CFG.dataBase, location.href).href;
 const REDUCED = matchMedia("(prefers-reduced-motion: reduce)").matches;
+const TOUCH = matchMedia("(pointer: coarse)").matches;          // a finger, not a mouse: wording only
 
 const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const MONL = ["January", "February", "March", "April", "May", "June", "July", "August", "September",
               "October", "November", "December"];
 const TILE = 256;
-const GLOBE_ZOOM = 1.7;          // the opening view: the whole globe, turned to the region that has our maps
-const GLOBE_CENTER = [127.6, 30];
+/* The opening view: the whole globe, turned to the region that has our maps. The numbers are those of the
+   lab's HDCA portal, so the two open alike; only the centre differs, because the maps are elsewhere.
+   The globe is sized to the map box: on a phone the map is about 350 px wide and a fixed desktop zoom
+   spills the globe out of it. Its diameter on screen is about 140 px × 2^zoom, so take the zoom for 80 %
+   of the shorter side, never more than the desktop's 1.55.
+   Those numbers hold for a globe centred on 18°N, as HDCA's is. MapLibre keeps the scale at the centre
+   of a globe equal to the flat map's there, so the globe is drawn larger by 1/cos(latitude of its centre):
+   centred on our 30°N it would be a tenth larger at the same zoom. That much zoom is taken off, and the
+   globe is the same size on screen as HDCA's. */
+const GLOBE = { center: [127.6, 30], zoom: 1.55, sizedAt: 18 };
+const NOPAD = { top: 0, bottom: 0, left: 0, right: 0 };
+function globeView() {
+  const box = document.getElementById("map"), card = document.getElementById("coverCard"), rad = Math.PI / 180;
+  const w = box ? box.clientWidth || 990 : 990, h = box ? box.clientHeight || 720 : 720;
+  const larger = Math.log2(Math.cos(GLOBE.sizedAt * rad) / Math.cos(GLOBE.center[1] * rad));
+  let zoom = clamp(Math.log2(0.8 * Math.min(w, h) / 140), 0.6, GLOBE.zoom), left = 0;
+  /* Unlike HDCA's, our map has a coverage card at its top left, with the legend below it. In a box narrower
+     than about 990 px a globe in the middle would run under them, so it is moved right until it is just
+     clear of the card; where even that is too wide for the box, it is sized to the part beside the card
+     and set in the middle of that. The shift is camera padding: see `fly` for how later moves undo it. */
+  const edge = card && card.offsetParent !== null ? card.offsetLeft + card.offsetWidth : 0;
+  if (edge) {
+    const free = w - edge, gap = 6, across = 140 * 2 ** zoom;
+    if (across + 2 * gap <= free) left = Math.max(0, 2 * (edge + gap) + across - w);
+    else { zoom = Math.max(0.6, Math.log2(0.92 * free / 140)); left = edge; }
+  }
+  return { center: GLOBE.center, zoom: zoom - larger, padding: { ...NOPAD, left } };
+}
+/* The opening. The page does not just appear. The globe comes in turning: it starts 140° to the west and
+   22° to the south (over West Africa), at half its size, and sweeps across Africa and Asia to settle on our
+   maps, fast at first and slowing into place. As it slows the panels over the map come up one after another,
+   the mark on the region lands, and meanwhile the cards beside the map rise in turn. Under four seconds in
+   all. The lab's HDCA portal opens with the same sweep (140° from the west, growing from about half size)
+   and then keeps turning slowly; ours comes to rest, because the globe has somewhere to be: facing the
+   region that has our maps, with the mark on it. Skipped with reduced motion, intro=0 and view=region; the
+   visitor's first drag or scroll takes over from it.
+     turn, south   where the turn starts, in degrees west and south of the opening view
+     back          how much zoom further out it starts
+     delay         ms after the map has loaded: the loading screen has faded by then, so the whole turn is seen
+     panels, mark  when the panels come up and the mark lands, as fractions of the turn's duration */
+const INTRO = { turn: 140, south: 22, back: 0.8, delay: 420, duration: 3600, panels: 0.58, mark: 0.85 };
+const MIN_ZOOM = 0.5;
 const FIXED_RANGE = { month: [0, 180], clim: [0, 180], annual: [400, 1100] };
 /* Magnitude ramp: yellow-green-blue, lightness falling monotonically (analogous hues, so it
    stays ordered for colour-blind readers and in grayscale). Always shown with its scale. */
@@ -402,6 +443,19 @@ function initMap() {
   buildLUT();
   registerProtocol();
   const bg = currentBg();
+  const gv = globeView(), intro = !(REDUCED || Q.get("intro") === "0" || Q.get("view") === "region");
+  const start = intro ? { ...gv, center: [gv.center[0] - INTRO.turn, gv.center[1] - INTRO.south], zoom: Math.max(0, gv.zoom - INTRO.back) } : gv;
+  openedHidden = !document.getElementById("map").clientWidth;      // another tab is open: the box has no size yet
+  if (intro) {                                                      // the panels over the map wait for the globe (CSS)
+    document.documentElement.classList.add("opening");
+    setTimeout(() => document.documentElement.classList.remove("opening"), 12000);      // whatever happens to the map, they do come
+    /* The turn sweeps half the Earth in about a second. Fetch the coarse tiles of our own layers for the whole
+       globe now, so that the far side is already in hand when it comes round. */
+    for (const z of [1, 2]) for (let x = 0; x < 2 ** z; x++) for (let y = 0; y < 2 ** z; y++) {
+      if (bg) getDN(bg.id, z, x, y).catch(() => {});
+      getDN(currentLayerId(), z, x, y).catch(() => {});
+    }
+  }
   map = new maplibregl.Map({
     container: "map",
     style: {
@@ -426,14 +480,16 @@ function initMap() {
         { id: "et", type: "raster", source: "et", paint: { "raster-opacity": 1, "raster-fade-duration": 150 } },
       ],
     },
-    center: GLOBE_CENTER, zoom: GLOBE_ZOOM, minZoom: 1.2, maxZoom: srcMaxZoom() + 2.5,
+    center: start.center, zoom: start.zoom, minZoom: intro ? 0 : MIN_ZOOM, maxZoom: srcMaxZoom() + 2.5,      // the turn starts further out than a visitor may go
     attributionControl: { compact: true }, dragRotate: false, pitchWithRotate: false, touchPitch: false,
   });
+  if (start.padding.left) map.setPadding(start.padding);          // the globe beside the coverage card, from the first frame
   map.touchZoomRotate.disableRotation();
   map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
   map.addControl(new maplibregl.ScaleControl({ unit: "metric", maxWidth: 110 }), "bottom-left");
   window.__portal = { map, state, getDN, L, dnCache, exact: () => exactDecode, zoom: CAT.zoom,          // handle for tests and debugging
-                      bg: BG, fine: FINE, fineZoom: FINE_ZOOM, note: () => noteShown };
+                      bg: BG, fine: FINE, fineZoom: FINE_ZOOM, note: () => noteShown,
+                      globeView, opening: intro ? { from: start, turn: INTRO.turn, south: INTRO.south, back: INTRO.back } : null };
 
   map.on("error", (e) => console.warn("[map]", e && e.error ? e.error.message : e));
   map.on("load", () => {
@@ -442,10 +498,11 @@ function initMap() {
     addMarkers();
     addFineAreas();
     loadLand();
-    /* The page opens on the whole globe and stays there until the visitor moves in. A link can ask
-       for the region with maps instead (view=region); if the map is not on screen yet (another tab
-       is open), the fit waits until it is. */
+    /* The page opens on the whole globe: it turns into place (see INTRO) and then stays there until the
+       visitor moves in. A link can ask for the region with maps instead (view=region); if the map is
+       not on screen yet (another tab is open), the fit waits until it is. */
     if (Q.get("view") === "region") { if (map.getContainer().clientWidth) fitRegion(0); else fitWhenShown = true; }
+    else if (intro) runOpening(start);
   });
   map.on("zoom", onZoom);
   map.on("move", onMove);
@@ -453,13 +510,88 @@ function initMap() {
   map.on("mouseout", () => { $("#roVal").textContent = ""; });
   map.on("click", onClick);
 }
-let fitWhenShown = false;
-const fitRegion = (duration) => map.fitBounds([[CAT.bounds[0], CAT.bounds[1]], [CAT.bounds[2], CAT.bounds[3]]], { padding: fitPadding(), duration });
+let fitWhenShown = false, openedHidden = false;
+/* The opening sequence (see INTRO). The classes on <html> drive the CSS part: "opening" keeps the panels
+   over the map and the mark out of sight, "opened" lets the panels come up, "arrived" lands the mark,
+   "entered" raises the cards beside the map. All of them are taken off again at the end, so nothing replays
+   when a tab is reopened or the mark is shown again.
+   The turn is for the visitor to see. If the middle of the map — the middle of the globe — is on screen as
+   the page opens, it starts at once, even where the lower part of the map is still below the fold (a laptop
+   window on the lab site): the visitor has just come in and should see the Earth move. Otherwise the map
+   starts below the fold (a short window) and the turn waits until the visitor has scrolled far enough to
+   see most of the globe. On a phone-width map it always waits for that: the header fills the first screen
+   there, the visitor scrolls at once, and a turn begun with a sliver of the globe in view would be over
+   before they arrive. While it waits ("waiting") the panels do not wait with it — an empty dark box would
+   look broken — and only the globe and the mark perform. */
+function runOpening(start) {
+  const root = document.documentElement, D = INTRO.duration;
+  const atStart = () => { const c = map.getCenter(); return !map.isMoving() && Math.abs(c.lng - start.center[0]) < 0.01 && Math.abs(map.getZoom() - start.zoom) < 0.01; };
+  const finish = () => {
+    root.classList.remove("opening", "waiting", "opened", "arrived");
+    /* From here on a visitor may not go further out than MIN_ZOOM. If they stopped the turn while it was
+       still further out than that, the limit waits until they have come in. */
+    const limit = () => { if (map.getZoom() >= MIN_ZOOM) { map.setMinZoom(MIN_ZOOM); map.off("zoomend", limit); } };
+    map.on("zoomend", limit); limit();
+  };
+  const turn = (delay) => {
+    setTimeout(() => {                                            // not if the visitor has already moved the map
+      if (atStart()) map.easeTo({ ...globeView(), duration: D, easing: (t) => 1 - (1 - t ** 1.4) ** 3 });      // off the mark quickly, then a long slowing into place
+    }, delay);
+    setTimeout(() => root.classList.replace("opening", "opened"), delay + D * INTRO.panels);
+    setTimeout(() => root.classList.add("arrived"), delay + D * INTRO.mark);
+    setTimeout(finish, delay + D + 1500);
+  };
+  root.classList.add("entered");
+  setTimeout(() => root.classList.remove("entered"), 1500);
+  const low = $("#mapLow"), phone = map.getContainer().clientWidth < 560;      // the width at which the map's panels change (portal.css)
+  whenInView(phone ? low : $("#mapMid"), low, () => turn(INTRO.delay), () => root.classList.replace("opening", "waiting"), () => turn(60));
+}
+/* Two points of the map decide when the opening runs (see runOpening). Calls `now` if `first` is on screen at
+   the first look; otherwise `wait`, and `later` once `then` has come into view (they may be the same point).
+   Inside a frame the browser still reports what the visitor really sees, which the page cannot measure for
+   itself there. */
+function whenInView(first, then, now, wait, later) {
+  if (!first || !then || !("IntersectionObserver" in window)) return now();
+  const seen = new Map();                                         // the latest report on each point: reports may come one at a time
+  let looked = false;
+  const io = new IntersectionObserver((entries) => {
+    for (const e of entries) seen.set(e.target, e.isIntersecting);
+    if (!looked) {
+      if (!seen.has(first)) return;                               // its first report is still to come
+      looked = true;
+      if (seen.get(first)) { io.disconnect(); return now(); }
+      wait();
+    }
+    if (seen.get(then)) { io.disconnect(); later(); }
+  });
+  io.observe(first); io.observe(then);
+}
+/* The globe view may hold the middle of the map to the right of the middle of its box (camera padding, see
+   globeView), and MapLibre keeps such padding for every later move. All other moves belong in the middle of
+   the box: `fly` takes the padding off as it goes, and `boundsCamera` works out a fit as if it were already
+   off (MapLibre would add the map's current padding to the one it is given). */
+const fly = (o) => map.flyTo({ padding: NOPAD, ...o });
+function boundsCamera(bounds, padding) {
+  const keep = map.getPadding(), padded = keep.left || keep.right || keep.top || keep.bottom;
+  if (padded) map.setPadding(NOPAD);                  // no frame is drawn between this and the line that puts it back
+  const cam = map.cameraForBounds(bounds, { padding });
+  if (padded) map.setPadding(keep);
+  return cam;
+}
+function fitRegion(duration) {
+  const cam = boundsCamera([[CAT.bounds[0], CAT.bounds[1]], [CAT.bounds[2], CAT.bounds[3]]], fitPadding());
+  if (!cam) return;
+  if (duration) fly({ ...cam, duration }); else map.jumpTo({ ...cam, padding: NOPAD });
+}
 /* Room to leave for the panels over the map when a region is fitted. On a narrow map the coverage card
    would sit on the region, so the region is fitted to the right of it. */
 function fitPadding() {
-  const card = $("#coverCard"), narrow = map.getContainer().clientWidth < 820 && card.offsetParent !== null;
-  return { top: 46, bottom: 76, left: narrow ? card.offsetLeft + card.offsetWidth + 12 : 40, right: 40 };
+  const w = map.getContainer().clientWidth, card = $("#coverCard"), legend = $("#legend");
+  const narrow = w < 820 && card.offsetParent !== null;
+  /* On a phone the legend is most of the map's width and the readout sits under the controls: the region
+     is fitted between them, not behind the legend. */
+  const phone = legend.offsetWidth > w / 2;
+  return { top: phone ? 96 : 46, bottom: phone ? legend.offsetHeight + 42 : 76, left: narrow ? card.offsetLeft + card.offsetWidth + 12 : 40, right: 40 };
 }
 async function loadLand() {
   /* Natural Earth 1:50m land (public domain), cut at the antimeridian. A "stitched" outline such as
@@ -505,11 +637,11 @@ function addFineAreas() {
 function goFine(a) {
   if (popup) { popup.remove(); popup = null; }
   const box = map.getContainer(), wide = box.clientWidth >= 900;
-  const fit = map.cameraForBounds([[a.bounds[0], a.bounds[1]], [a.bounds[2], a.bounds[3]]],
-    { padding: { top: 86, bottom: 56, left: wide ? 290 : 24, right: wide ? 40 : 24 } });      // clear of the controls (the name tag sits above the outline) and, where there is room, the legend
+  const fit = boundsCamera([[a.bounds[0], a.bounds[1]], [a.bounds[2], a.bounds[3]]],
+    { top: 86, bottom: 56, left: wide ? 290 : 24, right: wide ? 40 : 24 });      // clear of the controls (the name tag sits above the outline) and, where there is room, the legend
   const zMin = FINE_ZOOM + 0.6, zMax = FINE_ZOOM + 1.5;                                        // 3 to 5.7 screen px per native pixel
-  if (fit && fit.zoom >= zMin) map.flyTo({ center: fit.center, zoom: Math.min(fit.zoom, zMax), duration: 1800 });
-  else map.flyTo({ center: a.center, zoom: zMin, duration: 1800 });
+  if (fit && fit.zoom >= zMin) fly({ center: fit.center, zoom: Math.min(fit.zoom, zMax), duration: 1800 });
+  else fly({ center: a.center, zoom: zMin, duration: 1800 });
 }
 /* A sample area a click was meant for: far out they are squares a few pixels wide, so a near miss counts. */
 function fineNear(point) {
@@ -550,7 +682,7 @@ function updateView() {
   $("#steps").classList.toggle("off", !ours && z >= 2.6);          // the three steps describe our maps: nothing to say elsewhere
   document.querySelectorAll("#steps span").forEach((s) => s.classList.toggle("on", ours && +s.dataset.step === step));
   if (!fullRes()) document.querySelector('#steps span[data-step="2"]').textContent = native ? "Native 30 m" : `Finest here · ${finestRes()}`;
-  $("#roRes").textContent = z < 2.6 ? "Click or scroll to zoom in"
+  $("#roRes").textContent = z < 2.6 ? (TOUCH ? "Tap or pinch to zoom in" : "Click or scroll to zoom in")
     : ours ? `${fmtRes(groundRes(zd, c.lat))} per pixel${zd === top ? (native ? " (native)" : " (finest here)") : (FINE.length && native && zd >= CAT.zoom.max ? " · zoom in for 30 m" : "")}`
     : currentBg() ? `Background, ${fmt(BG.cell_km)} km cells` : "No ready-made maps here";
   updateNote();
@@ -585,17 +717,17 @@ function onClick(e) {
        to request the place. */
     if (!onLand(lng, lat)) return;
     const stop = outNoteZoom(lat) + 0.2;
-    if (z < 3.6) map.flyTo({ center: [lng, lat], zoom: 4.6, duration: 1400 });
-    else if (z < stop - 0.4) map.flyTo({ center: [lng, lat], zoom: stop, duration: 1500 });
+    if (z < 3.6) fly({ center: [lng, lat], zoom: 4.6, duration: 1400 });
+    else if (z < stop - 0.4) fly({ center: [lng, lat], zoom: stop, duration: 1500 });
     else demandPopup(e.lngLat);
     return;
   }
   /* A sample area of a reduced copy: a click on its square (or just beside it) far out, or inside its
      outline at the regional view, goes to the area itself. No spot is picked: the click was for the area. */
-  const area = z < 8 ? fineNear(e.point) : z < FINE_ZOOM + 0.5 ? fineAreaAt(lng, lat) : null;
+  const area = z < 4.2 ? null : z < 8 ? fineNear(e.point) : z < FINE_ZOOM + 0.5 ? fineAreaAt(lng, lat) : null;      // below 4.2 the squares are not shown
   if (area && z < 10.8) { goFine(area); return; }
-  if (z < 8) map.flyTo({ center: [lng, lat], zoom: zRegional(), duration: 1500 });
-  else if (nativeAt(lng, lat) && z < 10.8) map.flyTo({ center: [lng, lat], zoom: (CAT.zoom.native || CAT.zoom.max) - 0.3, duration: 1500 });      // on to the native grid, where the copy has it
+  if (z < 8) fly({ center: [lng, lat], zoom: zRegional(), duration: 1500 });
+  else if (nativeAt(lng, lat) && z < 10.8) fly({ center: [lng, lat], zoom: (CAT.zoom.native || CAT.zoom.max) - 0.3, duration: 1500 });      // on to the native grid, where the copy has it
   pickLocation(lng, lat);
 }
 function demandPopup(lngLat) {
@@ -1228,6 +1360,8 @@ function showTab(name) {
   if (name === "explore" && map) {
     map.resize();
     if (fitWhenShown) { fitWhenShown = false; fitRegion(0); }
+    else if (openedHidden) { map.stop(); map.jumpTo(globeView()); }      // the globe was sized before its box had a size
+    openedHidden = false;
   }
   hideTip(); sendHeight();
 }
@@ -1251,11 +1385,11 @@ function wire() {
   $("#jump").onchange = (e) => {                                   // regional view around the city, or a sample area; the list snaps back to its prompt
     const v = e.target.value, area = v.startsWith("fine:") ? FINE.find((a) => a.id === v.slice(5)) : null, c = area ? null : CITIES[+v];
     if (area) goFine(area);
-    else if (v !== "" && c) map.flyTo({ center: [c[1], c[2]], zoom: zRegional(), duration: 1600 });
+    else if (v !== "" && c) fly({ center: [c[1], c[2]], zoom: zRegional(), duration: 1600 });
     e.target.value = "";
   };
   $("#btnHome").onclick = () => fitRegion(1400);
-  $("#btnGlobe").onclick = () => map.flyTo({ center: GLOBE_CENTER, zoom: GLOBE_ZOOM, duration: 1800 });
+  $("#btnGlobe").onclick = () => map.flyTo({ ...globeView(), duration: 1800 });
   $("#srReset").onclick = () => { state.pick = null; recordModel = null; $("#recordBox").hidden = true; if (pickMarker) pickMarker.remove(); renderPeninsulaSeries(); };
   $("#rcTableBtn").onclick = (e) => { const t = $("#rcTable"); t.hidden = !t.hidden; e.currentTarget.textContent = t.hidden ? "Show table" : "Hide table"; e.currentTarget.setAttribute("aria-expanded", String(!t.hidden)); sendHeight(); };
   $("#rcCsv").onclick = () => download("prithvi_openet_pixel_record.csv", recordCSV(), "text/csv");

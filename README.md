@@ -16,10 +16,11 @@ will be released after the paper is accepted. The model code is at
 
 ## What it does
 
-- Opens on the whole globe, turned to the region with ready-made maps (the Korean Peninsula, April
-  2013 onward). The rest of the land carries a background layer from another product (MOD16A2GF,
-  NASA), named wherever a value from it appears: it is context, not this model's output. A small
-  fixed world map shows where our data exists; all other land can be requested.
+- Opens on the whole globe, which sweeps round and settles facing the region with ready-made maps
+  (the Korean Peninsula, April 2013 onward), sized to the map on any screen. The rest of the
+  land carries a background layer from another product (MOD16A2GF, NASA), named wherever a value
+  from it appears: it is context, not this model's output. A small fixed world map shows where our
+  data exists; all other land can be requested.
 - Click to zoom from the overview (about 2 km per pixel) to 120 m. Where the tiles on hand reach
   it — the full set, or the sample areas of the public copy — a second click goes on to the native
   30 m. Past what is published at a place, a note at the top of the map says so.

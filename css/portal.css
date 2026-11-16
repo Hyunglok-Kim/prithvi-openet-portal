@@ -52,6 +52,7 @@ code { font: 13px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; background
 .eyebrow { font-size: 12px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
 h1 { font: 600 28px/1.2 var(--font-display); letter-spacing: -.005em; }
 .h1-sub { font: 400 17px/1.3 var(--font-ui); color: var(--text-2); margin-left: 8px; white-space: nowrap; }
+@media (max-width: 760px) { .h1-sub { white-space: normal; display: block; margin-left: 0; font-size: 15px; } }      /* on a phone: its own line, flush left */
 .facts { display: flex; gap: 22px; flex-wrap: wrap; }
 .facts div { min-width: 0; }
 .facts dt { font-size: 11.5px; color: var(--muted); }
@@ -97,6 +98,12 @@ main { max-width: 1640px; margin: 0 auto; padding: 14px 20px 28px; }
 
 .mapwrap { position: relative; height: var(--map-h); border-radius: var(--radius); overflow: hidden; background: var(--well); border: 1px solid var(--border-strong); container: map / inline-size; }
 #map { position: absolute; inset: 0; }
+/* Two points of the map that decide when the opening runs (runOpening in app.js): its middle, which is the
+   middle of the globe, and a point two thirds of the way down — when that one is on screen, so is most of
+   the opening globe. */
+.map-mid, .map-low { position: absolute; left: 50%; width: 1px; height: 1px; pointer-events: none; }
+.map-mid { top: 50%; }
+.map-low { top: 62%; }
 .maplibregl-canvas { outline: none; }
 .maplibregl-ctrl-attrib { font-size: 10.5px; }
 .map-ui { position: absolute; z-index: 3; background: rgba(250,249,245,.95); border: 1px solid rgba(31,30,29,.14); border-radius: 10px; padding: 10px 12px; font-size: 12.5px; line-height: 1.4; box-shadow: 0 2px 10px rgba(0,0,0,.18); }
@@ -125,7 +132,7 @@ main { max-width: 1640px; margin: 0 auto; padding: 14px 20px 28px; }
 .mbtn input[type=range] { width: 74px; accent-color: var(--accent-solid); }
 
 .legend-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 6px; }
-.legend-title { font-weight: 600; }
+.legend-title { font-weight: 600; white-space: nowrap; }
 #lgHist { display: block; width: 240px; height: 34px; }
 .lg-bar { height: 10px; border-radius: 3px; border: 1px solid rgba(31,30,29,.18); }
 .lg-ticks { display: flex; justify-content: space-between; font-size: 11.5px; color: var(--text-2); margin-top: 3px; font-variant-numeric: tabular-nums; }
@@ -154,6 +161,32 @@ main { max-width: 1640px; margin: 0 auto; padding: 14px 20px 28px; }
 .fine-tag.compact small { display: none; }
 .fine-tag.compact:hover { border-color: #fff; background: var(--accent-deep); }
 
+/* ── the opening (INTRO and runOpening in app.js) ──
+   While the globe turns into place the panels over the map stay out of sight ("opening"); as it slows they
+   come up one after another ("opened"), then the mark lands on the region ("arrived"); the cards beside the
+   map rise in turn from the start ("entered"). Where the middle of the map is below the fold as the page
+   opens, the turn waits for the visitor to reach it ("waiting"): the panels are there from the start and
+   only the mark is held back.
+   The animations fill backwards only, so once they have run the elements are exactly as without them; the
+   classes are removed at the end. */
+@keyframes rise { from { opacity: 0; transform: translateY(12px); } }
+@keyframes fadein { from { opacity: 0; } }
+@keyframes land { 0% { opacity: 0; transform: scale(.2); } 55% { opacity: 1; transform: scale(1.45); } 100% { transform: scale(1); } }
+html.opening .map-ui, html.opening .steps, html.opening .maplibregl-ctrl-top-right { opacity: 0; pointer-events: none; }
+html.opening .pulse, html.opening .pulse-label, html.opened:not(.arrived) .pulse, html.opened:not(.arrived) .pulse-label,
+html.waiting:not(.arrived) .pulse, html.waiting:not(.arrived) .pulse-label { opacity: 0; }
+html.opened .map-tr { animation: rise .6s cubic-bezier(.2,.7,.2,1) backwards; }
+html.opened .maplibregl-ctrl-top-right { animation: fadein .6s ease backwards; }
+html.opened .map-tl { animation: rise .6s cubic-bezier(.2,.7,.2,1) .1s backwards; transition: none; }      /* its own fade (.dim) would run first and flicker */
+html.opened .map-bl { animation: rise .6s cubic-bezier(.2,.7,.2,1) .2s backwards; }
+html.opened .map-br { animation: rise .6s cubic-bezier(.2,.7,.2,1) .3s backwards; }
+html.opened .steps { animation: fadein .6s ease .3s backwards; }
+html.arrived .pulse { animation: land .7s cubic-bezier(.2,.9,.3,1.2) backwards, pulse 2s ease-out .7s infinite; }
+html.arrived .pulse-label { animation: fadein .5s ease .4s backwards; }
+html.entered .side .card { animation: rise .7s cubic-bezier(.2,.7,.2,1) .15s backwards; }
+html.entered .side .card:nth-child(2) { animation-delay: .27s; }
+html.entered .side .card:nth-child(3) { animation-delay: .39s; }
+
 .readout { color: var(--text-2); }
 .readout #roVal { color: var(--text); font-weight: 600; }
 .steps { position: absolute; z-index: 3; left: 50%; bottom: 30px; transform: translateX(-50%); display: flex; background: rgba(250,249,245,.95); border: 1px solid rgba(31,30,29,.14); border-radius: 999px; padding: 3px; font-size: 12px; box-shadow: 0 2px 10px rgba(0,0,0,.18); }
@@ -165,7 +198,15 @@ main { max-width: 1640px; margin: 0 auto; padding: 14px 20px 28px; }
 /* A narrow map (two columns on a small laptop): the opacity slider would run into the coverage card and the
    resolution pill into the legend, so both give way. This follows the map's own width, not the window's. */
 @container map (max-width: 800px) { .mbtn.slider, .steps { display: none; } }
-@container map (max-width: 560px) { .zoomnote { top: 82px; } }      /* on a phone the note is as wide as the map: clear the zoom buttons */
+/* A phone-width map. The readout does not fit beside the legend, so it sits under the controls; the note,
+   as wide as the map there, moves down to clear it and the zoom buttons; the legend gives up its histogram
+   so that it ends below the opening globe instead of covering it. */
+@container map (max-width: 560px) {
+  .map-br { top: 58px; bottom: auto; left: 12px; right: auto; max-width: calc(100% - 24px); flex-wrap: wrap; row-gap: 0; }
+  .zoomnote { top: 98px; }
+  .map-bl { width: 232px; }
+  #lgHist { display: none; }
+}
 .hint { color: var(--muted); font-size: 13px; margin-top: 8px; }
 
 .pop { font: 13px/1.45 var(--font-ui); color: var(--text); max-width: 260px; }
@@ -312,14 +353,19 @@ html.embed .top { padding-top: 14px; }
 .logos-footer .logos-row img { max-height: 48px; max-width: 110px; width: auto; height: auto; object-fit: contain; }
 .logos-footer .logo-hydroai img { max-height: 60px; max-width: 140px; }
 body { padding-bottom: 80px; }                                   /* room above the sticky strip */
-html:not(.embed) body:not(.hide-footer) { --map-h: max(560px, calc(100vh - 306px)); }   /* keep the map's lower edge clear of the strip */
 
 /* ── the line at the very top of the page (js/config.js notice) ── */
 .page-notice { margin: 0; padding: 8px 20px; text-align: center; font-size: 13.5px; line-height: 1.45; color: var(--text);
   background: var(--accent-tint); border-bottom: 1px solid rgba(184,84,52,.28); text-wrap: balance; }
 .page-notice[hidden] { display: none; }
-html:not(.embed) body.has-notice.hide-footer { --map-h: max(560px, calc(100vh - 273px)); }      /* the line takes its height from the map */
-html:not(.embed) body.has-notice:not(.hide-footer) { --map-h: max(560px, calc(100vh - 343px)); }
+/* On a wide screen the map is shortened so that its lower edge clears the logo strip, and by the height of
+   the notice. On a phone the header fills the first screen anyway, so the map keeps its plain height there
+   (the same as on the lab's HDCA portal) and the opening globe has room above the legend. */
+@media (min-width: 761px) {
+  html:not(.embed) body:not(.hide-footer) { --map-h: max(560px, calc(100vh - 306px)); }
+  html:not(.embed) body.has-notice.hide-footer { --map-h: max(560px, calc(100vh - 273px)); }
+  html:not(.embed) body.has-notice:not(.hide-footer) { --map-h: max(560px, calc(100vh - 343px)); }
+}
 body.hide-footer .logos-footer { display: none; }
 body.hide-footer { padding-bottom: 0; }
 @media (max-width: 900px) {
