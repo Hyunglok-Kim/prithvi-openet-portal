@@ -363,12 +363,20 @@ and a logo bar; the page's `message` listener sizes the frame from the portal's 
 posts. To edit it again: Webflow Designer → Pages → Data → Navigator → Code Embed → "Edit code
 embed". The editor is CodeMirror, so copy the text out, patch it, and paste it back.
 
+The page has an entrance of its own (since 2026-11-16): on a click on a dataset card the panel
+fades in, and the frame stays hidden behind a breathing globe mark ("Opening the portal") until
+its `load` event, then fades up. That usually happens just as our opening starts, so the visitor
+sees the mark, then the globe sweeping in. The frame is hidden with `opacity`, which the opening's
+view check does not see: if a slow resource ever held the frame's `load` back for long, the turn
+would begin unseen.
+
 That embed is one block shared by every dataset on the page (the hub cards, the panels of the
-other portals, the routing script), and other people edit it for their own panels. **Start every
-edit from the editor's current text, never from a saved copy**: a copy made before somebody
-else's edit silently undoes that edit when it is pasted. It nearly happened in November 2026 — a
-copy of the page taken before this panel was added would have put the old static ET panel back.
-After an edit, check all three cards on the live page, not only your own.
+other portals, the routing script), and other people edit it for their own panels. A copy of its
+text is kept in the HDCA portal's repository (`embed/hydroai-data-page.html`). **Start every edit
+from the editor's current text, never from a saved copy without comparing the two first**: a copy
+made before somebody else's edit silently undoes that edit when it is pasted. It nearly happened in
+November 2026 — a copy of the page taken before this panel was added would have put the old static
+ET panel back. After an edit, check all three cards on the live page, not only your own.
 
 Left:
 1. **The full 30 m tiles in public**, at publication. Needs a host with HTTP Range and CORS (see
