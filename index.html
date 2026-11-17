@@ -10,7 +10,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600&family=Source+Serif+4:opsz,wght@8..60,500;8..60,600&display=swap" />
 <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5.24.1/dist/maplibre-gl.css" />
-<link rel="stylesheet" href="css/portal.css?v=20261116e" />
+<link rel="stylesheet" href="css/portal.css?v=20261117a" />
 </head>
 <body>
 
@@ -64,6 +64,18 @@
       <div class="mapwrap">
         <div id="map" aria-label="Map of monthly evapotranspiration"></div>
         <i class="map-mid" id="mapMid" aria-hidden="true"></i><i class="map-low" id="mapLow" aria-hidden="true"></i>      <!-- the opening looks at these two points of the map to decide when to run -->
+
+        <!-- In the map's place where the browser gives no WebGL context (noMap in app.js). -->
+        <div class="nomap-msg" id="noMap" role="alert" hidden>
+          <p class="nomap-h">The map cannot be drawn in this browser right now</p>
+          <p>The map is drawn with WebGL, the browser's graphics acceleration, and this browser is not providing it. Either it is switched off, or the browser has lost it: Chrome, for one, switches it off after its graphics process has failed several times, and keeps it off until it is restarted.</p>
+          <ul>
+            <li>Quit the browser completely and open it again. That usually brings it back.</li>
+            <li>If it does not, switch on graphics (hardware) acceleration in the browser's settings. In Chrome it is under Settings, System: “Use graphics acceleration when available”.</li>
+            <li>Or open this page in another browser.</li>
+          </ul>
+          <p>The rest of the page does not need the map: the cards beside it, and the Download, Use in code, About the data and Request a region tabs.</p>
+        </div>
 
         <div class="map-ui map-tl" id="coverCard">
           <p class="mini-h">Coverage</p>
@@ -395,6 +407,6 @@
 <script src="https://unpkg.com/maplibre-gl@5.24.1/dist/maplibre-gl.js"></script>
 <script src="https://unpkg.com/pmtiles@4.5.0/dist/pmtiles.js"></script>
 <script src="js/config.js?v=20261115n"></script>
-<script src="js/app.js?v=20261116e"></script>
+<script src="js/app.js?v=20261117a"></script>
 </body>
 </html>

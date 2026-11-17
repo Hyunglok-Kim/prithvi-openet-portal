@@ -305,7 +305,16 @@ ends on the globe view with the panels and the mark in place and none of its cla
 in a phone-sized window that the globe fits its box, that the readout is clear of the legend, that
 "Peninsula" shows the region above the legend, and that the turn waits until the map is scrolled
 into view; and, in a window that ends between the two points the opening looks at, that it runs at
-once without a scroll.
+once without a scroll. Last, it takes WebGL away (a page whose canvases give no WebGL context) and
+expects the message in the map's place with the rest of the page working, and it loses the map's
+context on a running page and expects the message after a few seconds and the map back when the
+context returns.
+
+The test draws in software (Chromium with SwiftShader; Firefox does the same by itself), so it does
+not depend on the machine's graphics card. Headless WebKit uses the real one: on a machine whose
+graphics card is busy with other work it loses its contexts ("WebGL: context lost", the first
+screen times out), and so does every other map page there. That failure is the machine, not the
+page; check that another map site opens in the same browser before looking for a bug.
 
 `python -m http.server` will not do: PMTiles needs HTTP Range requests. When a copy sits behind a
 session cookie, pass it to the smoke test as `SMOKE_COOKIE="name=value"`.
@@ -428,6 +437,13 @@ Left:
 - **The opening is judged where visitors meet it: on the lab site, after a click on the dataset
   card.** Look at it inside that page's frame, at a laptop height (about 800 px) as well as on a
   large screen, not only at the portal's own address in a tall window.
+- **Never leave a visitor on the loading screen.** The map needs WebGL and cannot be drawn without
+  it. Where the browser gives no context (`webglWorks()`), or the map fails to start, or its context
+  is lost and has not come back after `LOST_WAIT`, `noMap()` puts a message where the map would be
+  — what is wrong and what to do about it — and takes the loading screen away. The cards, the
+  layer buttons and the other tabs go on working without the map; keep it so (`applyLayer` and the
+  rest already allow for `map` being undefined, because the cards are drawn before the map is
+  made).
 - **The request endpoint is never taken from the page address.** A link must not be able to
   redirect what people type; it is set in `js/config.js` only.
 
@@ -484,6 +500,16 @@ Left:
 - **A transition beats an animation.** The coverage card has `transition: opacity` for its `.dim`.
   When the class that hid it during the opening came off, that transition ran first and the
   animation then took over from a lower opacity: a flicker. `transition: none` while it rises.
+- **"The site does not open."** In November 2026 the page stayed on "Loading the catalog…" in the
+  lab head's Chrome, the day after a change, and it looked as if the change had broken it. The
+  servers and the page were fine. Chrome's graphics process had been killed three times in a few
+  minutes the evening before (the machine's graphics card was overloaded), after which Chrome
+  keeps graphics acceleration off until it is restarted — and current Chrome does not draw WebGL in
+  software instead. `new maplibregl.Map` then throws, and the loading screen was only ever taken
+  away by the map's `load` event. Hence the check before the map is made and the message. To tell
+  this case from a broken site: in the browser that fails,
+  `document.createElement("canvas").getContext("webgl")` is `null`, while a fresh browser opens
+  the page.
 - **The opening did not run on a laptop.** It first waited for a point two thirds of the way down
   the map to be on screen. At the portal's own address that is always so; inside the lab site's
   frame the map starts 360 px down the page, and in a window under about 800 px tall the page

@@ -29,6 +29,8 @@ will be released after the paper is accepted. The model code is at
 - Click a pixel for its monthly series, its full record, and a CSV.
 - Lists the monthly GeoTIFFs with checksums, and shows how to read them in Python and QGIS.
 - Takes requests for other regions: any land area with HLS observations.
+- The map needs WebGL. In a browser that does not provide it, the page says so where the map would
+  be and what to do about it; the cards, the other tabs and the request form still work.
 
 ## How it works
 

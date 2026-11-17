@@ -662,6 +662,71 @@ with sync_playwright() as pw:
     check(4 < zr < 8, f"view=region opens on the region with maps instead of the globe (zoom {zr:.2f})")
     p2.close()
 
+    # A browser that gives no WebGL context (graphics acceleration switched off, or lost for the session): the page
+    # says so where the map would be instead of staying on its loading screen, and the rest of it works.
+    pc = new_context(viewport={"width": 1440, "height": 900}, device_scale_factor=1)
+    pc.add_init_script("""(() => { const real = HTMLCanvasElement.prototype.getContext;
+        HTMLCanvasElement.prototype.getContext = function (type, ...rest) { return /webgl/i.test(String(type)) ? null : real.call(this, type, ...rest); }; })();""")
+    ng = pc.new_page()
+    ng.on("pageerror", lambda e: console.append(("pageerror", str(e))))
+    ng.goto(a.base, wait_until="domcontentloaded")
+    try:
+        ng.wait_for_function("document.documentElement.classList.contains('nomap') && document.querySelector('#boot') === null", timeout=30000)
+    except Exception:
+        pass
+    VIS = "const vis = (q) => { const e = document.querySelector(q); return !!e && !e.hidden && getComputedStyle(e).display !== 'none' && e.getBoundingClientRect().height > 0; };"
+    st = ng.evaluate("() => { " + VIS + """ return {cls: document.documentElement.className, boot: !!document.querySelector('#boot'), msg: vis('#noMap'), text: document.querySelector('#noMap').innerText,
+        map: vis('#map'), legend: vis('#legend'), controls: vis('.map-tr'), hint: vis('#hint'), cards: vis('#cardLayer'), title: document.querySelector('#lyTitle').textContent}; }""")
+    ng.click("#modeSeg button[data-mode=clim]")                       # the layer buttons drive the cards beside the map too
+    ng.wait_for_timeout(600)
+    t2 = ng.inner_text("#lyTitle")
+    ng.click(".tab[data-tab=download]")
+    ng.wait_for_timeout(400)
+    dl = ng.locator("#tab-download").is_visible()
+    ng.click(".tab[data-tab=explore]")
+    ng.wait_for_timeout(300)
+    check(st["cls"].split() == ["nomap"] and not st["boot"] and st["msg"] and "WebGL" in st["text"] and "open it again" in st["text"]
+          and not st["map"] and not st["legend"] and not st["controls"] and not st["hint"] and st["cards"],
+          "without WebGL the page says in the map's place why there is no map, and its loading screen goes: " + st["text"].splitlines()[0])
+    check(t2 != st["title"] and "mean" in t2 and dl and ng.evaluate("() => { " + VIS + " return vis('#noMap'); }"),
+          f"without WebGL the rest of the page works (layer card goes to '{t2}', the Download tab opens)")
+    ng.screenshot(path=str(shots / "18_no_webgl.png"))
+    pc.close()
+
+    # A WebGL context lost while the page is open (the browser's graphics process failed): if it has not come back
+    # after a few seconds the page says the map is gone; when it does come back, so does the map.
+    pc = new_context(viewport={"width": 1440, "height": 900}, device_scale_factor=1)
+    lc = pc.new_page()
+    lc.on("pageerror", lambda e: console.append(("pageerror", str(e))))
+    lc.goto(a.base + sep + "intro=0", wait_until="domcontentloaded")
+    lc.wait_for_function("window.__portal && window.__portal.map && window.__portal.map.loaded()", timeout=60000)
+    lc.wait_for_function("document.querySelector('#boot') === null", timeout=15000)
+    has = lc.evaluate("""() => { const c = window.__portal.map.getCanvas(), gl = c.getContext('webgl2') || c.getContext('webgl');
+        const x = gl && gl.getExtension('WEBGL_lose_context'); if (!x) return false; window.__lose = x; x.loseContext(); return true; }""")
+    if has:
+        lc.wait_for_timeout(2500)
+        early = lc.evaluate("document.documentElement.classList.contains('nomap')")      # not at once: a context usually comes back
+        try:
+            lc.wait_for_function("document.documentElement.classList.contains('nomap')", timeout=12000)
+        except Exception:
+            pass
+        gone = lc.evaluate("() => { " + VIS + " return {msg: vis('#noMap'), map: vis('#map'), noMap: window.__portal.noMap}; }")
+        lc.evaluate("window.__lose.restoreContext()")
+        try:
+            lc.wait_for_function("!document.documentElement.classList.contains('nomap') && window.__portal.map.loaded()", timeout=30000)
+        except Exception:
+            pass
+        lc.wait_for_timeout(800)
+        back = lc.evaluate("() => { " + VIS + " return {msg: vis('#noMap'), map: vis('#map'), noMap: window.__portal.noMap, loaded: window.__portal.map.loaded(), zoom: window.__portal.map.getZoom()}; }")
+        check(not early and gone["msg"] and not gone["map"] and gone["noMap"] is True,
+              "a WebGL context lost while the page is open: after a few seconds without it the page says the map is gone")
+        check(not back["msg"] and back["map"] and back["noMap"] is False and back["loaded"],
+              f"when the context comes back the map returns (zoom {back['zoom']:.2f})")
+        lc.screenshot(path=str(shots / "19_context_restored.png"))
+    else:
+        notes.append("   (this browser has no WEBGL_lose_context: the lost-context check was skipped)")
+    pc.close()
+
     errs = [c for c in console if c[0] in ("error", "pageerror")]
     check(not errs, f"no console errors ({len(errs)})")
     for c in errs[:12]:

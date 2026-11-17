@@ -161,6 +161,18 @@ main { max-width: 1640px; margin: 0 auto; padding: 14px 20px 28px; }
 .fine-tag.compact small { display: none; }
 .fine-tag.compact:hover { border-color: #fff; background: var(--accent-deep); }
 
+/* ── the page without its map (noMap in app.js): the browser gives no WebGL context ──
+   The message stands where the map would be; the panels over the map and the hint about clicking it go,
+   and the box is only as tall as the message needs. */
+.nomap-msg { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; min-height: 340px; padding: 30px 24px; background: var(--well); color: #F0EEE6; text-align: center; }
+.nomap-msg[hidden] { display: none; }
+.nomap-h { font: 600 21px/1.3 var(--font-display); }
+.nomap-msg p:not(.nomap-h), .nomap-msg ul { max-width: 620px; font-size: 14.5px; line-height: 1.55; color: rgba(240,238,230,.88); }
+.nomap-msg ul { text-align: left; padding-left: 20px; }
+.nomap-msg li + li { margin-top: 6px; }
+html.nomap .mapwrap { height: auto; }
+html.nomap #map, html.nomap .map-ui, html.nomap .steps, html.nomap #hint { display: none; }
+
 /* ── the opening (INTRO and runOpening in app.js) ──
    While the globe turns into place the panels over the map stay out of sight ("opening"); as it slows they
    come up one after another ("opened"), then the mark lands on the region ("arrived"); the cards beside the
