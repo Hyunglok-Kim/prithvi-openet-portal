@@ -406,13 +406,21 @@ word of the same day: the first version showed only our own maps on the globe (t
 layer switched off) and went into Anmyeon; "show the map with global ET laid on it first, and
 Pyeongchang for the 30 m part". The loop is drawn as this portal draws it, from the public copy
 of the tiles, so outside the Korean Peninsula its colours are the background layer — another
-product. The card therefore names it on the picture for as long as it shows: the first caption
-("Global background: MODIS ET (MOD16A2GF)", also the words on the still picture) and the credit
-line ("Background ET: MOD16A2GF (NASA)"). Keep both whenever the card is re-worded: that is the
-rule "the background is never passed off as ours" applied to a picture. **In pictures of this
-dataset the lab head wants the global ET on the globe, named — not the globe left bare.** The
-pictures and the scripts that make them are in the HDCA portal's repository (`embed/media/`,
-`embed/tools/` with a README).
+product. The card names it on the picture in its first caption ("Global background: MODIS ET
+(MOD16A2GF)", shown while the globe is in view and on the still picture). Keep that caption
+whenever the card is re-worded: it is the rule "the background is never passed off as ours"
+applied to a picture. **In pictures of this dataset the lab head wants the global ET on the
+globe, named — not the globe left bare.** The pictures and the scripts that make them are in the
+HDCA portal's repository (`embed/media/`, `embed/tools/` with a README).
+
+For a few hours the picture also carried a credit line at its top ("Background ET: MOD16A2GF
+(NASA) · Imagery © Esri, Maxar, Earthstar Geographics"), which kept the name on screen through
+the whole loop. The lab head had the credit lines taken off every card that evening ("지금 모든
+섹션카드 background ET: ~, imagery @Esri, 이거 지워"). So from about 3.7 to 7 s of the loop the
+neighbouring countries show the background with no name on the picture, and the page no longer
+credits the Esri imagery that the loops are drawn over. Both were put to the lab head, with the
+option of one small line under the card grid; that is theirs to decide. Do not put text back on
+the pictures without their word.
 
 Left:
 1. **The full 30 m tiles in public**, at publication. Needs a host with HTTP Range and CORS (see
