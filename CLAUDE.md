@@ -123,8 +123,14 @@ facing the region that has our maps, with the mark on it.
   for that lower point: the header fills the first screen there, the visitor scrolls at once, and
   a turn begun with a sliver of the globe in view would be over before they arrive. While it waits
   the panels are already there — an empty dark box would look broken — and only the globe and the
-  mark perform (`waiting`). On the lab site the map starts 360 px down the page, so on a laptop or
-  desktop the turn runs on entry in windows about 720 px tall or more.
+  mark perform (`waiting`). How tall a window must be for the turn to run on entry depends on what
+  sits above the map on the lab site. Until 2026-11-17 the map started 360 px down the page and
+  windows of about 720 px or more got the turn on entry. The data-use line added above the map
+  that day (`.use-strip`; one line at 1512 px width or more, two lines below that) moved the
+  map's middle to 770 px in wide windows, 796 px at 1366–1440 px and 834 px at 1280 px, so a
+  13-inch laptop window now waits for a scroll. Anything else put above the map moves it further:
+  measure on the lab site after such a change. The smoke test's laptop check takes its window
+  from the page's geometry and passes either way.
 - **Off switches.** Reduced motion, `intro=0` and `view=region` open at rest. The visitor's first
   drag or scroll takes over from the turn.
 - `minZoom` is 0.5, as on HDCA (a phone's globe view is below zoom 1); during the turn it is 0,
@@ -385,7 +391,18 @@ text is kept in the HDCA portal's repository (`embed/hydroai-data-page.html`). *
 from the editor's current text, never from a saved copy without comparing the two first**: a copy
 made before somebody else's edit silently undoes that edit when it is pasted. It nearly happened in
 November 2026 — a copy of the page taken before this panel was added would have put the old static
-ET panel back. After an edit, check all three cards on the live page, not only your own.
+ET panel back. After an edit, check every card on the live page, not only your own.
+
+**The hub card (since 2026-11-17).** On that page's hub each dataset card opens with a short
+silent loop and lists key facts and what the portal offers. Ours shows the globe, the Korean
+Peninsula and one 30 m sample area (Anmyeon) in mean annual ET, and says "30 m, monthly",
+"April 2013 – August 2026, 160 monthly maps", "Korean Peninsula now; any other land area on
+request" and "Paper under review. Until it is accepted the maps are shown down to 120 m, and at
+30 m in eight sample areas". **Those words repeat this portal's own numbers: when the record, the
+coverage, the sample areas or the paper's status change, change the card too.** The loop was drawn
+from the public copy of the tiles with the background layer switched off (it is another product,
+and the picture has no room to name it), so it keeps the rules below. The pictures and the scripts
+that make them are in the HDCA portal's repository (`embed/media/`, `embed/tools/` with a README).
 
 Left:
 1. **The full 30 m tiles in public**, at publication. Needs a host with HTTP Range and CORS (see
@@ -394,7 +411,9 @@ Left:
 2. **The GeoTIFFs.** Public address with a DOI, then `cogBase` in `js/config.js`: the Download tab
    shows direct links and the code examples use them.
 3. **At publication:** empty `paperStatus` and `notice` in `js/config.js` and write the reference
-   into the citation in the About tab; a licence for this repository.
+   into the citation in the About tab; a licence for this repository. Also the card on
+   hydroai.net/data: its Status line, and its loop if the public copy of the tiles changes (see
+   "The hub card").
 4. **Other regions.** The app assumes one region with maps (`CAT.bounds`). When a second region is
    produced, the catalog, the coverage test (`inBounds`) and the notes need to learn about several.
 
