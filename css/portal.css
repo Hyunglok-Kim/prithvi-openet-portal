@@ -389,3 +389,14 @@ body.hide-footer { padding-bottom: 0; }
   body { padding-bottom: 60px; }
   body.hide-footer { padding-bottom: 0; }
 }
+
+/* ── data use: one line on Explore, a three-part box on Download (the same on every HydroAI data portal; PI 2026-11-17) ── */
+.use-strip { display: flex; flex-wrap: wrap; gap: 6px 26px; margin: 0 0 14px; padding: 9px 16px; background: var(--panel); border-radius: var(--radius-sm); font-size: 13px; color: var(--text-2); max-width: 1640px; }
+.use-strip b { color: var(--text); font-weight: 600; margin-right: 4px; }
+.use-strip a { font-weight: 500; }
+.usebox { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin: 12px 0 18px; }
+.usebox > div { background: var(--surface); border: 1px solid var(--border); border-left: 4px solid var(--accent-solid); border-radius: var(--radius-sm); padding: 10px 14px 12px; }
+.usebox > div:first-child { border-left-color: var(--series); }
+.usebox p { margin: 0; font-size: 13.5px; color: var(--text-2); line-height: 1.55; }
+.usebox .mini-h { margin-bottom: 4px; }
+@media (max-width: 1000px) { .usebox { grid-template-columns: 1fr; } }

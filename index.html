@@ -10,7 +10,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600&family=Source+Serif+4:opsz,wght@8..60,500;8..60,600&display=swap" />
 <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5.24.1/dist/maplibre-gl.css" />
-<link rel="stylesheet" href="css/portal.css?v=20261117a" />
+<link rel="stylesheet" href="css/portal.css?v=20261117b" />
 </head>
 <body>
 
@@ -49,6 +49,8 @@
 
 <!-- ───────────────────────────── Explore ───────────────────────────── -->
 <section id="tab-explore" class="tabpane on" role="tabpanel">
+  <!-- Data use in one line (PI, 2026-11-17): where the data stand, what to cite, whom to write to for collaboration. -->
+  <p class="use-strip" aria-label="Using these data"><span><b>Data</b> released after the paper is accepted (preview here); other regions on request</span><span><b>Please cite</b> Choi, E., Kim, S., and Kim, H., Prithvi-OpenET (manuscript under review; DOI to follow)</span><span><b>Research collaboration</b> <a href="mailto:hyunglokkim@gist.ac.kr">hyunglokkim@gist.ac.kr</a></span></p>
   <div class="explore">
     <div class="mapcol">
       <div class="layerbar" aria-label="What the map shows">
@@ -193,6 +195,11 @@
 <section id="tab-download" class="tabpane" role="tabpanel" hidden>
   <div class="prose-wide">
     <h2 class="pane-h">Download</h2>
+    <div class="usebox" aria-label="Using these data">
+      <div><p class="mini-h">Data</p><p>The maps will be released, with a DOI, after the paper is accepted; what this site shows is a preview. Other regions can be produced on request (see “Request a region”).</p></div>
+      <div><p class="mini-h">Please cite</p><p>If you use these data, cite the paper: Choi, E., Kim, S., and Kim, H. Prithvi-OpenET: Geospatial Foundation Model-Based 30 m Monthly Evapotranspiration Estimation beyond the Conterminous United States with Landsat and Sentinel-2 Imagery. Manuscript under review; the reference and DOI will be given here at publication.</p></div>
+      <div><p class="mini-h">Research collaboration</p><p>For joint work with Prithvi-OpenET — other regions or periods, model adaptation, validation or application studies — write to Hyunglok Kim, <a href="mailto:hyunglokkim@gist.ac.kr">hyunglokkim@gist.ac.kr</a> (HydroAI Lab, GIST).</p></div>
+    </div>
     <p class="lead">One Cloud-Optimized GeoTIFF per month. Each file holds the whole peninsula at 30 m and can be read in part over HTTP, so you rarely need the full archive.</p>
     <div class="notice" id="dlNotice"></div>
     <div class="dl-tools">
@@ -287,7 +294,8 @@
     <h3 id="ab-demand">Other regions, on request</h3>
     <p id="abDemand"></p>
 
-    <h3 id="ab-cite">Citation</h3>
+    <h3 id="ab-cite">Citation and collaboration</h3>
+    <p>Please cite the paper when you use these data, and write to <a href="mailto:hyunglokkim@gist.ac.kr">hyunglokkim@gist.ac.kr</a> for research collaboration.</p>
     <p class="cite">Choi, E., Kim, S., and Kim, H. Prithvi-OpenET: Geospatial Foundation Model-Based 30 m Monthly Evapotranspiration Estimation beyond the Conterminous United States with Landsat and Sentinel-2 Imagery. <span id="abPaper">Manuscript in preparation.</span></p>
 
     <h3 id="ab-credits">Sources and credits</h3>
@@ -315,7 +323,7 @@
         <a href="#ab-made">How these maps were made</a>
         <a href="#ab-read">Read this before you use the numbers</a>
         <a href="#ab-demand">Other regions, on request</a>
-        <a href="#ab-cite">Citation</a>
+        <a href="#ab-cite">Citation and collaboration</a>
         <a href="#ab-credits">Sources and credits</a>
       </nav>
     </div>
