@@ -394,15 +394,25 @@ November 2026 — a copy of the page taken before this panel was added would hav
 ET panel back. After an edit, check every card on the live page, not only your own.
 
 **The hub card (since 2026-11-17).** On that page's hub each dataset card opens with a short
-silent loop and lists key facts and what the portal offers. Ours shows the globe, the Korean
-Peninsula and one 30 m sample area (Anmyeon) in mean annual ET, and says "30 m, monthly",
+silent loop and lists key facts and what the portal offers. Ours says "30 m, monthly",
 "April 2013 – August 2026, 160 monthly maps", "Korean Peninsula now; any other land area on
 request" and "Paper under review. Until it is accepted the maps are shown down to 120 m, and at
 30 m in eight sample areas". **Those words repeat this portal's own numbers: when the record, the
-coverage, the sample areas or the paper's status change, change the card too.** The loop was drawn
-from the public copy of the tiles with the background layer switched off (it is another product,
-and the picture has no room to name it), so it keeps the rules below. The pictures and the scripts
-that make them are in the HDCA portal's repository (`embed/media/`, `embed/tools/` with a README).
+coverage, the sample areas or the paper's status change, change the card too.**
+
+Its loop (`et-v2`) opens on the globe with ET over all land, comes down to the Korean Peninsula
+and goes into the Pyeongchang sample area at 30 m, in mean annual ET. That is the lab head's
+word of the same day: the first version showed only our own maps on the globe (the background
+layer switched off) and went into Anmyeon; "show the map with global ET laid on it first, and
+Pyeongchang for the 30 m part". The loop is drawn as this portal draws it, from the public copy
+of the tiles, so outside the Korean Peninsula its colours are the background layer — another
+product. The card therefore names it on the picture for as long as it shows: the first caption
+("Global background: MODIS ET (MOD16A2GF)", also the words on the still picture) and the credit
+line ("Background ET: MOD16A2GF (NASA)"). Keep both whenever the card is re-worded: that is the
+rule "the background is never passed off as ours" applied to a picture. **In pictures of this
+dataset the lab head wants the global ET on the globe, named — not the globe left bare.** The
+pictures and the scripts that make them are in the HDCA portal's repository (`embed/media/`,
+`embed/tools/` with a README).
 
 Left:
 1. **The full 30 m tiles in public**, at publication. Needs a host with HTTP Range and CORS (see
