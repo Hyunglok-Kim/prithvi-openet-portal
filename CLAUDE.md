@@ -547,6 +547,15 @@ and a logo bar; the page's `message` listener sizes the frame from the portal's 
 posts. To edit it again: Webflow Designer → Pages → Data → Navigator → Code Embed → "Edit code
 embed". The editor is CodeMirror, so copy the text out, patch it, and paste it back.
 
+**Open the Designer by the Data page's own address**, `…design.webflow.com/?pageId=` followed by
+the `data-wf-page` value in the live page's `<html>` tag, never by the site's plain address. Opened
+plainly it lands on the home page, and Webflow re-measures the pictures of a page that is open in
+the Designer and keeps new `sizes` values for them, which go out with the next publish by anyone.
+On 2026-11-21 a session of ours landed on Home for forty seconds on its way to Data and touched
+nothing; its own publish left Home as it was, and the next publish, by someone else, sent three
+of Home's pictures out with `sizes` of 31 to 144 px, so that they were drawn from the smallest
+file. A clean comparison of one's own publish does not clear this: tell the next publisher.
+
 The page has an entrance of its own (since 2026-11-16): on a click on a dataset card the panel
 fades in, and the frame stays hidden behind a breathing globe mark ("Opening the portal") until
 its `load` event, then fades up. That usually happens just as our opening starts, so the visitor
