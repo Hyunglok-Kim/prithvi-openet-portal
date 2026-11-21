@@ -195,9 +195,9 @@ html.opened .map-br { animation: rise .6s cubic-bezier(.2,.7,.2,1) .3s backwards
 html.opened .steps { animation: fadein .6s ease .3s backwards; }
 html.arrived .pulse { animation: land .7s cubic-bezier(.2,.9,.3,1.2) backwards, pulse 2s ease-out .7s infinite; }
 html.arrived .pulse-label { animation: fadein .5s ease .4s backwards; }
-html.entered .side .card { animation: rise .7s cubic-bezier(.2,.7,.2,1) .15s backwards; }
-html.entered .side .card:nth-child(2) { animation-delay: .27s; }
-html.entered .side .card:nth-child(3) { animation-delay: .39s; }
+html.entered .side .card, html.entered .side .regionbar { animation: rise .7s cubic-bezier(.2,.7,.2,1) .15s backwards; }
+html.entered .side .card:nth-of-type(2) { animation-delay: .27s; }      /* of-type: the choice of region may stand above the cards */
+html.entered .side .card:nth-of-type(3) { animation-delay: .39s; }
 
 .readout { color: var(--text-2); }
 .readout #roVal { color: var(--text); font-weight: 600; }
@@ -210,6 +210,11 @@ html.entered .side .card:nth-child(3) { animation-delay: .39s; }
 /* A narrow map (two columns on a small laptop): the opacity slider would run into the coverage card and the
    resolution pill into the legend, so both give way. This follows the map's own width, not the window's. */
 @container map (max-width: 800px) { .mbtn.slider, .steps { display: none; } }
+/* With several regions there is a button for each over the map, and they take room. The slider then gives way a
+   little sooner, and on a map narrower still the buttons do: the regions are also in the "Go to" list, and
+   above the cards beside the map. */
+@container map (max-width: 850px) { html.multi .mbtn.slider { display: none; } }
+@container map (max-width: 700px) { html.multi .mbtn.region-btn { display: none; } }
 /* A phone-width map. The readout does not fit beside the legend, so it sits under the controls; the note,
    as wide as the map there, moves down to clear it and the zoom buttons; the legend gives up its histogram
    so that it ends below the opening globe instead of covering it. */
@@ -229,11 +234,16 @@ html.entered .side .card:nth-child(3) { animation-delay: .39s; }
 .city { font: 500 11.5px/1 var(--font-ui); color: #fff; text-shadow: 0 0 3px rgba(0,0,0,.95), 0 0 6px rgba(0,0,0,.7); pointer-events: none; white-space: nowrap; transition: opacity .2s; }
 .pulse { width: 14px; height: 14px; border-radius: 50%; background: #F4C9B8; border: 2px solid var(--accent-solid); box-shadow: 0 0 0 0 rgba(217,119,87,.6); animation: pulse 2s ease-out infinite; }
 .pulse-label { position: absolute; left: 22px; top: -1px; white-space: nowrap; font: 600 12px/1.2 var(--font-ui); color: #fff; text-shadow: 0 0 4px rgba(0,0,0,.9); }
+.pulse-label.to-left { left: auto; right: 22px; }      /* the mark of a region east of where the globe faces: its label points to the middle of the globe */
 @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(217,119,87,.6); } 100% { box-shadow: 0 0 0 16px rgba(217,119,87,0); } }
 @media (prefers-reduced-motion: reduce) { .pulse { animation: none; box-shadow: 0 0 0 5px rgba(217,119,87,.3); } }
 
 /* ── side cards ── */
 .side { display: flex; flex-direction: column; gap: 12px; }
+/* Above the cards when there are several regions: the one the cards describe. */
+.regionbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; min-height: 36px; margin-bottom: -2px; }
+.regionbar[hidden] { display: none; }
+.regionbar .mini-h { margin: 0; }
 .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px 16px; }
 .card h2 { font: 600 19px/1.25 var(--font-display); }
 .card-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
@@ -327,6 +337,7 @@ table.spec th { width: 170px; color: var(--muted); font-weight: 500; white-space
 .dl-tools { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 14px; font-size: 13.5px; }
 .dl-tools select { border: 1px solid var(--border-strong); background: var(--surface); border-radius: var(--radius-sm); padding: 4px 8px; }
 .dl-total { color: var(--muted); margin-left: auto; }
+.dl-tools[hidden], .dl-tools label[hidden] { display: none; }
 pre.code { background: #1F1E1D; color: #F0EEE6; border-radius: var(--radius-sm); padding: 14px 16px; overflow-x: auto; font: 12.5px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace; margin: 8px 0 6px; white-space: pre; }
 
 /* ── request form ── */

@@ -26,6 +26,13 @@ portal draws their outlines and reads those archives there.
 
 A background layer (pipeline/make_background.py) is carried over as it is, into the first folder.
 
+One region per run: --src is that region's folder (the tile set's top folder for the first region,
+its <id>/ folder inside for any other), and --name should say which region the folders hold. The
+first region's catalog lists the others ("regions"). In a copy their catalogs sit somewhere else,
+so say where with --link ID=ADDRESS, the address as seen from this copy's first folder
+(--link fr=../prithvi-openet-tiles-fr-1/catalog.json). A region without a --link is left out of the
+copy's list: a public catalog must not point at a catalog that is not there.
+
 Needs: python3 and pmtiles (pip); numpy and Pillow as well when --fine is given. Light work — well
 under a minute on a laptop for the Korean set.
 """
@@ -183,6 +190,8 @@ def main():
     ap.add_argument("--volume-mb", type=float, default=600, help="largest size of one folder (one site)")
     ap.add_argument("--name", default="prithvi-openet-tiles", help="folders are NAME-1, NAME-2, …")
     ap.add_argument("--fine", default="", help="GeoJSON of small areas that keep the native detail")
+    ap.add_argument("--link", action="append", default=[], metavar="ID=ADDRESS",
+                    help="where the copy of another region's catalog is, as seen from this copy's first folder (repeatable)")
     ap.add_argument("--portal", default="https://github.com/Hyunglok-Kim/prithvi-openet-portal", help="address written into the folders' README")
     a = ap.parse_args()
     src, out, t0 = Path(a.src), Path(a.out), time.time()
@@ -221,6 +230,14 @@ def main():
             print(f"  {i + 1}/{len(records)} archives  [{time.time() - t0:.0f} s]", flush=True)
 
     cat["zoom"] = {"min": cat["zoom"]["min"], "max": min(a.max_zoom, native), "native": native}
+    if cat.get("regions"):                                          # the other regions: where their catalogs are in this copy
+        links = dict(item.split("=", 1) for item in a.link)
+        left_out = [r["id"] for r in cat["regions"] if r["id"] not in links]
+        cat["regions"] = [{"id": r["id"], "catalog": links[r["id"]]} for r in cat["regions"] if r["id"] in links]
+        if left_out:
+            print(f"  not in this copy's list of regions (no --link given): {', '.join(left_out)}")
+        if not cat["regions"]:
+            del cat["regions"]
     cat["copy"] = {"kind": "preview", "of_version": cat["version"], "made": time.strftime("%Y-%m-%dT%H:%M:%S%z"), "sites": names}
     cat.pop("fine", None)
     if fine_count:
@@ -238,6 +255,7 @@ def main():
     (out / names[0] / "catalog.json").write_text(json.dumps(cat, separators=(",", ":")))
 
     first, last = cat["record"]["first"], cat["record"]["last"]
+    where = (cat.get("region") or {}).get("the", "the Korean Peninsula")
     fine_words = (f"{len(areas)} small area{'s' if len(areas) > 1 else ''}{' ' + what if what else ''} ({', '.join(ar['name'] for ar in areas)})\n"
                   f"keep the native zoom {native} in the `*.fine.pmtiles` files; outside their outlines those tiles repeat zoom {cat['zoom']['max']}.\n"
                   if fine_count else "")
@@ -249,7 +267,7 @@ def main():
         (folder / "README.md").write_text(
             f"# Prithvi-OpenET-Tower browse tiles — public preview, part {k} of {len(names)}\n\n"
             f"Numeric map tiles for the [Prithvi-OpenET-Tower data portal]({a.portal}): 30 m monthly\n"
-            f"evapotranspiration of the Korean Peninsula, {first} to {last}, reduced to zoom {cat['zoom']['min']}–{cat['zoom']['max']}\n"
+            f"evapotranspiration of {where}, {first} to {last}, reduced to zoom {cat['zoom']['min']}–{cat['zoom']['max']}\n"
             f"so that it fits on GitHub Pages. The full set goes to zoom {native} (30 m).\n{fine_words}\n"
             "One PMTiles file per month (`monthly/`) and per climatology layer (`clim/`). A tile is an 8-bit\n"
             "grayscale PNG that holds values, not colours: `value = DN × dn_step`, `DN 255 = no data`.\n"

@@ -18,6 +18,7 @@ Two kinds of entry:
 import io
 import json
 import math
+import os
 import sys
 
 import numpy as np
@@ -26,7 +27,12 @@ from pmtiles.reader import MmapSource, Reader
 
 TILES = [("clim/KP_ET_clim_annual.pmtiles", 8, 218, 99),       # mid-zoom, central Korea
          ("monthly/KP_ET_202107.pmtiles", 12, 3492, 1586),     # native zoom, a monsoon month with gaps
-         ("monthly/KP_ET_202107.pmtiles", 5, 27, 12)]          # overview, mostly sea
+         ("monthly/KP_ET_202107.pmtiles", 5, 27, 12),          # overview, mostly sea
+         # a second region, in its folder inside the set (left out when the set has none): the test then also
+         # shows that a tile is read from the region it lies in
+         ("fr/clim/FR_ET_clim_annual.pmtiles", 8, 129, 90),    # mid-zoom, central France
+         ("fr/monthly/FR_ET_202107.pmtiles", 10, 519, 361),    # the finest level of a reduced copy, the Massif Central
+         ("fr/monthly/FR_ET_202107.pmtiles", 5, 16, 11)]       # overview: most of France in one tile
 WINDOWS = [("clim/KP_ET_clim_annual.pmtiles", 12, 127.24966, 38.20140),     # the middle of the Cheorwon area
            ("monthly/KP_ET_202107.pmtiles", 12, 126.35914, 36.50566)]       # the middle of the Anmyeon area
 WIN = 32                                                       # window size, px (about 1 km: well inside a 6.7 km area)
@@ -40,6 +46,8 @@ def read(root, name, z, x, y):
 
 root, out = sys.argv[1].rstrip("/"), {}
 for name, z, x, y in TILES:
+    if not os.path.exists(f"{root}/{name}"):
+        continue
     a = read(root, name, z, x, y)
     out[f"{name}|{z}/{x}/{y}"] = {"sum": int(a.astype(np.int64).sum()), "n255": int((a == 255).sum()),
                                   "px": [int(a[10, 10]), int(a[128, 128]), int(a[50, 200]), int(a[255, 0])]}

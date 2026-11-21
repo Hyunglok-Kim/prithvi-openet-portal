@@ -1,19 +1,22 @@
 # Prithvi-OpenET-Tower Data Portal — working notes
 
 Web portal for 30 m monthly evapotranspiration (ET) maps made with Prithvi-OpenET-Tower. It opens
-on the whole globe, which turns into place facing the region that has ready-made maps; the rest of
-the land carries a named background layer from another global ET product. It zooms from a whole region down to the
-native 30 m, says at the top of the map when the view has gone past what is published at a place,
-shows on a small fixed world map where data exists, and takes requests for other regions.
+on the whole globe, which turns into place facing the regions that have ready-made maps (today the
+Korean Peninsula and France); the rest of the land carries a named background layer from another
+global ET product. It zooms from a whole region down to the native 30 m, says at the top of the map
+when the view has gone past what is published at a place, shows on a small fixed world map where
+data exists, and takes requests for other regions.
 `README.md` is the short introduction; this file is the detail a maintainer (human or agent) needs
 before changing anything.
 
 **Status (November 2026): public preview.** The portal is live on GitHub Pages
 (https://hyunglok-kim.github.io/prithvi-openet-portal/) and embedded on https://hydroai.net/data#et.
-The public site reads a **reduced copy** of the browse tiles — zoom 3–10, about 120 m, plus the
-native 30 m inside eight small areas around the paper's Korean flux-tower sites — from three tile
-repositories, because GitHub Pages cannot hold the full 17.6 GB set and because the full 30 m maps
-are released after the paper is accepted; the full set is served only inside the lab. A line at
+Two regions have maps: the Korean Peninsula (since 2026-11-15) and France, the mainland and Corsica
+(since 2026-11-21). The public site reads a **reduced copy** of the browse tiles — zoom 3–10, about
+120 m, plus the native 30 m inside eight small areas around the paper's Korean flux-tower sites —
+from tile repositories on GitHub Pages (three for the Korean Peninsula, seven for France), because
+GitHub Pages cannot hold the full sets (17.6 GB and 49.8 GB) and because the full 30 m maps are
+released after the paper is accepted; the full sets are served only inside the lab. A line at
 the top of the page says so. The GeoTIFFs are not published. The
 request backend (`worker/`) is deployed and connected. Lab-internal operations (storage paths, how
 the lab hosts its own copy) are documented outside this repository.
@@ -28,7 +31,7 @@ js/app.js           the app (MapLibre GL + PMTiles + SVG charts), one IIFE, no b
 assets/             land-50m.json — Natural Earth land, cut at the antimeridian (public domain)
                     coverage-world.svg — the small world map in the coverage card (a generated file)
                     logos/ — the two marks in the logo strip at the bottom
-pipeline/           tile and catalog builders (Python + GDAL), run where the GeoTIFFs live;
+pipeline/           tile and catalog builders (Python + GDAL), run where the GeoTIFFs live, one region per run;
                     make_coverage_map.py draws the coverage picture from the tiles;
                     make_background.py turns a coarse global field into the background layer;
                     make_preview_copy.py makes the reduced copy of the tiles that the public site reads,
@@ -41,16 +44,60 @@ dev_server.py       local preview with HTTP Range support
 ## How the data reaches the map
 
 ```
-GeoTIFF per month (any CRS, uint16 x10, band 1 = ET)
+for each region: GeoTIFF per month (any CRS, uint16 x10, band 1 = ET)
   └─ pipeline/build_tiles.py      warp to Web Mercator at the top zoom, average down to the coarsest
        └─ KP_ET_YYYYMM.pmtiles + .json    one file per month: 8-bit numeric tiles + statistics
   └─ pipeline/build_clim.py       monthly means over the training years and their annual sum (native grid)
        └─ KP_ET_clim_MM.pmtiles, KP_ET_clim_annual.pmtiles
-  └─ pipeline/make_catalog.py     catalog.json — the one file the app reads first
+  └─ pipeline/make_catalog.py     the region's catalog.json: its layers, its record, a mask of where its maps are
 a coarse global ET field from another product (optional)
-  └─ pipeline/make_background.py  background/<id>_<layer>.pmtiles + the catalog's "background" block
+  └─ pipeline/make_background.py  background/<id>_<layer>.pmtiles + the first catalog's "background" block
 any static host with HTTP Range support → browser
 ```
+
+## Regions
+
+A region is one stretch of land with ready-made maps, made from one set of GeoTIFFs on one grid.
+Today: `kp`, the Korean Peninsula (EPSG:5179, files `KP_…`), and `fr`, France (EPSG:2154, files
+`FR_…`). Everything about a region is in **its own catalog**, and nothing in the app names one.
+
+- **Where things are.** The first region's tiles sit at the top of the tile set (`catalog.json`,
+  `monthly/`, `clim/`, and the background). Every other region has a folder inside it, named by
+  its id, with the same three (`fr/catalog.json`, `fr/monthly/`, `fr/clim/`). The first catalog
+  lists the others under `regions` (`[{"id": "fr", "catalog": "fr/catalog.json"}]`;
+  `make_catalog.py` finds them by itself), and the app, which is pointed at the first catalog only
+  (`dataBase`), fetches them from there. Addresses in a catalog are relative to that catalog. In
+  the public copy the regions are in different repositories, and the list says so (see "The reduced
+  public copy"). A catalog that cannot be read is left out and the page works with the rest.
+- **What a catalog says about its region.** `region`: an id and three names — `name` as a title
+  ("Korean Peninsula"), `short` for its button and in front of "mean" ("Peninsula"), `the` inside a
+  sentence ("the Korean Peninsula"). `bounds`: the box of its grid. `mask`: a coarse grid (about
+  2 km a cell, run lengths) of where its maps have values. The box of a grid takes in a good deal
+  of the neighbours — the box around France holds Belgium, Switzerland and much of northern Italy —
+  so whether a place "has maps" is asked of the mask (`regionAt` in `app.js`), never of the box. A
+  click, the cursor readout, the notes and the cards all go by it.
+- **One layer, several regions.** "The annual mean" or "July 2021" is one layer on the map and one
+  choice in the controls, whatever regions hold it. A tile is put together from the regions it
+  touches (`getDN` → `regionDN`); from zoom 3 on, regions that lie apart never share a tile, so
+  that only matters for the few tiles of the far-out globe. The regions' tiles of one layer must
+  count in the same step (`dn_step`: 1 mm/month, and 6 mm/year for the annual layer — keep
+  `ANNUAL_STEP` the same for every region). A layer that one region lacks is simply empty there,
+  and the cards say "no map of this layer" for that region.
+- **The cards describe one region at a time.** The mean, the share of land observed, the
+  histogram in the legend, the seasonal cycle, the record calendar, the Download list and the code
+  examples are one region's: the region in focus (`FOCUS`). The focus follows the map — the region
+  the middle of the map is on — and stays with the last one over open sea or the far-out globe.
+  A visitor changes it by going there: a button over the map for every region, the same choice
+  above the cards ("Region"), the "Go to" list; the lists in the Download and Code tabs change the
+  focus without moving the map. `view=<id>` in the address opens on a region.
+- **The globe faces all of them.** See "The opening globe".
+
+To add a region: build its tiles and catalog (`REGION=<id>`, "Building tiles"), rebuild the first
+catalog so that it lists the new one, re-make the background with one more `--hide` (it must not
+show under the new maps), re-make the coverage picture with one more `--region`, make and publish
+the region's reduced copy and link it from the first one, and add its place names (`CITIES`) and a
+place for the code examples (`EXAMPLES`) in `app.js`. Then read the About tab: sentences about one
+region carry `data-for-region` and show only when that region is there.
 
 **Tile contract.** A tile is a 256 px 8-bit grayscale PNG holding values, not colours:
 `value = DN × dn_step`, `DN 255 = no data`. `dn_step` is 1 mm/month for monthly and climatology
@@ -74,6 +121,12 @@ tiles sit one level ahead):
 | Regional (first click) | 9.2 | 10 | ≈ 120 m |
 | Native (second click) | 11.7 | 12 | ≈ 30 m |
 
+A tile pixel of one zoom is smaller on the ground the further north it lies. In the middle of France
+(46°N) zoom 10 is about 105 m and zoom 12 about 26 m, finer than the 30 m grid the maps were made
+on. So the finest level of a reduced copy has a region's own name ("120 m" on the peninsula, "110 m"
+in France: `finestRes(R)`), the page says "110–120 m" where it speaks of the whole site
+(`finestAll()`), and at the native zoom the readout never says less than the grid's 30 m.
+
 The page opens on the globe (next section) and stays there until the visitor moves in. A click on
 the region with maps goes to the regional view and then, where the tiles on hand reach it, to the
 native one. A click on land anywhere else moves in on that place in two steps (map zoom 4.6, then
@@ -84,7 +137,12 @@ the place.
 
 The view the page opens on is set up like the lab's HDCA portal, so the two globes are the same size
 on every screen (`GLOBE` and `globeView()` in `app.js`); only the centre differs, because our maps
-are in Korea. How the page gets there (`INTRO`, `runOpening()`) is the same kind of opening as
+are elsewhere. With one region the globe faces that region (127.6°E, 30°N for the Korean Peninsula,
+the view the page opened on until France was added). With several it faces the middle of them, so
+that each is in sight with its mark: the longitude halfway between the westernmost and the
+easternmost region, the latitude unchanged, so the globe keeps its size (`faceRegions()`). For the
+Korean Peninsula and France that is 65.4°E, 30°N: Eurasia from end to end, each region about 51°
+from the middle of the globe. How the page gets there (`INTRO`, `runOpening()`) is the same kind of opening as
 HDCA's — a sweep from 140° to the west, growing from about half size — which the lab head asked for
 on both portals ("more dynamic on entering from the data card"). One difference is deliberate:
 HDCA's globe keeps turning slowly afterwards, ours comes to rest, because it has somewhere to be —
@@ -105,10 +163,10 @@ facing the region that has our maps, with the mark on it.
   camera padding, which stays set for every later move; so all other camera calls go through `fly`
   (takes the padding off as it goes) and `boundsCamera` (works out a fit as if it were off).
 - **The opening.** The globe comes in turning: it starts 140° to the west and 22° to the south (over
-  West Africa) at half its size, and sweeps across Africa and Asia to settle on Korea in 3.6 s,
-  off the mark quickly and then slowing for a long time. As it slows the panels over the map come
-  up one after another, then the mark lands on the region; the cards beside the map rise in turn
-  from the start. The numbers are in `INTRO`; the CSS part is driven by classes on `<html>`
+  West Africa for a globe that rests on Korea; over the Caribbean for one that rests on the middle
+  of Eurasia) at half its size, and sweeps east to settle in 3.6 s, off the mark quickly and then
+  slowing for a long time. As it slows the panels over the map come up one after another, then the
+  marks land on the regions; the cards beside the map rise in turn from the start. The numbers are in `INTRO`; the CSS part is driven by classes on `<html>`
   (`opening`, `opened`, `arrived`, `entered`), all taken off again at the end. The coarse tiles of
   our layers for the whole globe are fetched before the turn starts, so the far side is in hand
   when it comes round. There is no fly-in to the peninsula: the turn ends on the whole globe.
@@ -131,8 +189,14 @@ facing the region that has our maps, with the mark on it.
   13-inch laptop window now waits for a scroll. Anything else put above the map moves it further:
   measure on the lab site after such a change. The smoke test's laptop check takes its window
   from the page's geometry and passes either way.
-- **Off switches.** Reduced motion, `intro=0` and `view=region` open at rest. The visitor's first
-  drag or scroll takes over from the turn.
+- **A mark on every region** ("Available now"), shown while the globe is far out. Its label
+  stands to the right of the mark — or to the left, for a region east of where the globe faces:
+  towards the middle of the globe, so that it stays inside the globe and the map box when the
+  region is near the edge (on a phone the two labels then sit side by side between the marks). A
+  mark that has gone round the back of the globe is not shown (`opacityWhenCovered: "0"`; MapLibre
+  would otherwise leave it there at a fifth of its strength).
+- **Off switches.** Reduced motion, `intro=0` and `view=region` (or `view=<region id>`) open at
+  rest. The visitor's first drag or scroll takes over from the turn.
 - `minZoom` is 0.5, as on HDCA (a phone's globe view is below zoom 1); during the turn it is 0,
   because the turn starts further out than a visitor may go.
 - **On a phone-width map** (container query, 560 px): the readout sits under the controls, because
@@ -143,7 +207,7 @@ facing the region that has our maps, with the mark on it.
 
 ## The background layer
 
-Our maps cover one region, so on the globe the rest of the land would be empty. The catalog can
+Our maps cover a few regions, so on the globe the rest of the land would be empty. The catalog can
 carry a `background`: a global ET product from somewhere else, drawn under our maps on the same
 colour scale. Today it is MOD16A2GF (MODIS, NASA LP DAAC; open data), the 2016–2024 mean on a 0.1°
 grid, and it stands behind the annual-mean layer only.
@@ -153,15 +217,19 @@ python pipeline/make_background.py --src mod16_global_mean_monthly.npz --scale 1
     --id mod16a2gf --name MOD16A2GF --layer annual --units mm/year --dn-step 10 \
     --long "MODIS/Terra Net Evapotranspiration, gap-filled (MOD16A2GF v061), NASA LP DAAC" \
     --period "2016–2024" --grid "0.1°" --cell-km 11 --doi 10.5067/MODIS/MOD16A2GF.061 \
-    --hide /path/to/out/clim/KP_ET_clim_annual.pmtiles --out /path/to/out --catalog
+    --hide /path/to/out/clim/KP_ET_clim_annual.pmtiles --hide /path/to/out/fr/clim/FR_ET_clim_annual.pmtiles \
+    --out /path/to/out --catalog
 ```
 
 - `--src` is a lon/lat grid (`.npz` with `et`, `lon`, `lat`, or a GeoTIFF); `--scale 12` turns a
   mean monthly field into mm per year. Needs numpy, Pillow, pmtiles; about 20 seconds; 10.6 MB.
 - The tiles follow the tile contract (zoom 0–6). Pixels off the land outline are dropped, and so
-  are pixels that our own maps touch plus a margin of two pixels (`--hide`): the background must
-  never show through or beside the real thing. Across a land border that leaves a strip of about
-  5 km with neither.
+  are pixels that our own maps touch plus a margin of two pixels (`--hide`, once for every region):
+  the background must never show through or beside the real thing. Across a land border that
+  leaves a strip of about 5 km with neither. **When a region is added, the background is re-made
+  with its annual layer hidden as well**, and it goes out together with that region's maps: an
+  old background under new maps shows through their gaps, a new background without the maps
+  leaves the region blank.
 - The script writes `background/background.json`, the block that `make_catalog.py` puts into the
   catalog under `background` (`--catalog` writes it into an existing catalog straight away), and
   `make_preview_copy.py` carries the layer into the reduced copy. One run per layer; the block
@@ -181,11 +249,16 @@ When the view has gone past what is published at a place, a note appears at the 
 (`updateNote` in `app.js`):
 
 - **outside** — zoomed in (map zoom 7.3 or more) on land without maps of ours: only the Korean
-  Peninsula has detailed maps for now, what is on screen is the background, other regions are
-  produced on request; buttons go to the peninsula or to the request form, filled in for the place.
-- **finest** — zoomed past the finest level of a reduced copy, outside its sample areas: 120 m is
-  the finest level here for now, the native 30 m is shown only in the sample areas (the catalog's
-  `fine.what` says what they are); buttons go to the three nearest.
+  Peninsula and France have detailed maps for now, what is on screen is the background, other
+  regions are produced on request; buttons go to the nearest region and to the request form,
+  filled in for the place (one region only: a button for each made the note a line taller, and it
+  then covered the button of the request popup that the next click opens). "Without maps of ours" goes by the regions' masks, so the note also
+  comes up in Geneva or Milan, which lie inside the box of France's grid.
+- **finest** — zoomed past the finest level of a reduced copy, outside its sample areas: 120 m
+  (110 m in France) is the finest level here for now, the native 30 m is shown only in the sample
+  areas (a catalog's `fine.what` says what they are); buttons go to the three nearest of that
+  region. A region without sample areas — France today — gets one button, to the region that has
+  them.
 
 `paperStatus` in `js/config.js` ("under review") supplies the clause "While the paper is …" and the
 status in the citation. Empty it at publication. The sentences are written so that each is true as
@@ -210,12 +283,40 @@ pipeline/run_layers.sh catalog                                     # only rebuil
 
 `ROOT` and `SRC_ROOT` can also sit in an untracked `local.env` next to `run_layers.sh`.
 
+That builds the first region. Any other is one more run with `REGION=<id>`, its settings in an
+untracked `local.<id>.env` next to the script (read after `local.env`):
+
+```bash
+# local.fr.env
+SRC_ROOT=/path/to/france-dataset        # holds et_30m/{YYYY}/FR_ET30m_{YYYYMM}.tif and SHA256SUMS
+PREFIX=FR                               # how its files are named (default KP)
+CATALOG_ARGS=(--catalog-id prithvi-openet-tower-france --region-id fr --region-name France --region-short France --region-the France)
+```
+
+```bash
+REGION=fr PAR=24 THREADS=4 pipeline/run_layers.sh months 2013 2014 … 2026    # → out/fr/monthly/, logs in logs/fr/
+REGION=fr PAR=13 THREADS=4 pipeline/run_layers.sh clim                       # → work/fr/clim/, out/fr/clim/, out/fr/catalog.json
+pipeline/run_layers.sh catalog                                               # the first catalog again: it lists the regions
+```
+
 - One month of the Korean Peninsula (22,403 × 36,677 px) takes about 3 minutes and 12 GB of memory;
   16 at a time finished all 160 months in 36 minutes. The climatology step takes 4 minutes plus 4
-  for its tiles.
+  for its tiles. One month of France (38,140 × 35,466 px; 49,152 × 45,056 px on the zoom-12 grid)
+  takes 5 to 19 minutes (10 on average) and up to 17 GB; all 160 months took 82 minutes, started 16 at a time
+  and widened to 28, and the climatology step 22 (5 for the climatology, 17 for its tiles).
+- `xargs` takes `SIGUSR1` to run one more job at a time and `SIGUSR2` for one fewer, so a run that
+  turns out to have room can be widened without starting again. Send them one by one with a second
+  between: signals that arrive together count as one.
 - Output lands in `out/monthly/`, `out/clim/`, `out/catalog.json`; the native-grid climatology
   GeoTIFFs stay in `work/clim/`. A month's file is 19–144 MB (most are 80–135 MB). The Korean set is
-  17.6 GB: 16.2 GB monthly (981,615 tiles) plus 1.4 GB for the climatology layers.
+  17.6 GB: 16.2 GB monthly (981,615 tiles) plus 1.4 GB for the climatology layers. The French set
+  is 49.8 GB: 46.0 GB monthly (2,666,565 tiles; a month's file is 54–534 MB) plus 3.9 GB for the
+  climatology layers.
+- `make_catalog.py` keeps the version name of the catalog it replaces unless `--version` is given
+  (the data are the same under a rewritten catalog), reads the grid of the GeoTIFFs for the
+  `source` block, and makes the region's mask from its climatology layers at zoom 10: a cell is
+  set when any pixel in it has a value, and the grid is grown by one cell, so that a small island
+  counts and a spot the mask calls empty has no map within a couple of kilometres.
 - When copying tiles to a host, copy `catalog.json` last: the app lists whatever the catalog names.
 
 ## The coverage picture
@@ -227,35 +328,53 @@ at once, which a globe cannot do, and nothing in it reacts to the pointer.
 
 ```bash
 python pipeline/make_coverage_map.py \
-    --region "Korean Peninsula=/path/to/out/clim/KP_ET_clim_annual.pmtiles"     # needs numpy, Pillow, pmtiles
+    --region "Korean Peninsula=/path/to/out/clim/KP_ET_clim_annual.pmtiles" \
+    --region "France=/path/to/out/fr/clim/FR_ET_clim_annual.pmtiles"            # needs numpy, Pillow, pmtiles
 ```
 
 - One `--region NAME=FILE` per region with data. The outline is read from the tiles (the pixels
   that hold a value, at zoom 5), so the picture shows the data's own footprint, not a box.
 - Equal Earth projection (equal-area, so sizes are honest), no Antarctica (HLS does not cover it).
-- After regenerating: bump the `?v=` on the `<img>` in `index.html`, and update its `alt` text and
-  the key under it if the list of regions changed. The smoke test checks that the mark sits where
-  the region is on the Earth.
+- After regenerating: bump the `?v=` on the `<img>` in `index.html`. Its `alt` text and the key
+  under it are written by the app from the catalogs; the names given to `--region` must be the
+  catalogs' region names, because the smoke test looks for them in the picture, the key and the
+  header. It also checks that the first mark sits where the region is on the Earth.
 
 ## The reduced public copy
 
-GitHub Pages serves a site of at most 1 GB and files under 100 MB; the full tile set is 17.6 GB,
-and the full 30 m maps are released after the paper is accepted, not before. Until then the public
-site reads a copy cut off at zoom 10, with the native zoom kept in a few small areas:
+GitHub Pages serves a site of at most 1 GB and files under 100 MB; the full tile sets are 17.6 GB
+and 49.8 GB, and the full 30 m maps are released after the paper is accepted, not before. Until
+then the public site reads a copy cut off at zoom 10, with the native zoom kept in a few small
+areas. One run per region:
 
 ```bash
 python pipeline/make_preview_copy.py --src /path/to/out --out /path/to/public \
     --max-zoom 10 --volume-mb 600 --name prithvi-openet-tiles \
-    --fine pipeline/preview_fine_areas.geojson          # needs pmtiles, numpy, Pillow; about two minutes
+    --fine pipeline/preview_fine_areas.geojson \
+    --link fr=../prithvi-openet-tiles-fr-1/catalog.json      # needs pmtiles, numpy, Pillow; about two minutes
+python pipeline/make_preview_copy.py --src /path/to/out/fr --out /path/to/public \
+    --max-zoom 10 --volume-mb 900 --name prithvi-openet-tiles-fr
 ```
 
 - Tile bytes are copied untouched, so at zoom 3–10 the copy holds exactly the full set's numbers.
   Zoom 10 is about 120 m; a value there is the mean of the valid 30 m pixels in the cell.
-- The copy is 1.76 GB, spread over three folders of 530–630 MB. Each folder is one repository
-  with Pages on: `prithvi-openet-tiles-1` (catalog, climatology, first months, the background
-  layer), `-2`, `-3`. The catalog addresses the other two as `../prithvi-openet-tiles-2/monthly/…`,
-  which works because the sites are neighbours on one host. `js/config.js` `dataBase` points at
-  the first.
+- The Korean copy is 1.76 GB, spread over three folders of 530–630 MB. Each folder is one
+  repository with Pages on: `prithvi-openet-tiles-1` (catalog, climatology, first months, the
+  background layer), `-2`, `-3`. The catalog addresses the other two as
+  `../prithvi-openet-tiles-2/monthly/…`, which works because the sites are neighbours on one
+  host. `js/config.js` `dataBase` points at the first.
+- The French copy is 4.98 GB in seven folders of 390–780 MB, `prithvi-openet-tiles-fr-1` to
+  `-7` (France is two and a half times the land, and a zoom-10 tile is smaller on the ground
+  at its latitude; a month is 7–48 MB). The first holds that region's catalog. The Korean
+  copy's catalog lists it (`--link`: the address of the other region's catalog as seen from the
+  first folder), and that is the only tie between the two copies: either can be rebuilt without
+  the other. A region left without a `--link` is left out of the copy's list, so a public catalog
+  never points at a catalog that is not there.
+- **The order of going public matters when a region is added**: first the new region's
+  repositories (nothing reads them yet), then the portal app that knows about regions (with the
+  old first catalog it simply shows one region), and last the first region's new catalog and
+  background, which switch the new region on. The other way round, visitors get the new
+  background, which is cut out under the new region, from an app that does not yet draw it.
 - The catalog of a reduced copy has `zoom.max` (10) below `zoom.native` (12). The app reads that
   pair (`fullRes()` in `app.js`) and changes every sentence that names a resolution: the badge by
   the layer buttons, the third step of the resolution pill, the readout, the hint under the map,
@@ -282,10 +401,13 @@ python pipeline/make_preview_copy.py --src /path/to/out --out /path/to/public \
   all fill the map with the area, at 3 screen pixels per native pixel or more (map zoom 12.6 to
   13.5; on a small map the area runs past the edges). At the regional view the readout over an
   area reads "120 m per pixel · zoom in for 30 m".
-- Adding the sample areas or the background does not change the 173 archives and their sidecars
-  (the copy is deterministic), so a repository only gains files.
+- Adding the sample areas, the background or a link to another region does not change the 173
+  archives and their sidecars (the copy is deterministic), so a repository only gains or changes
+  its small files.
 - After rebuilding tiles: run the script again into the same parent folder, then commit and push
-  each of the three folders. Pages redeploys in a minute or two.
+  each of the folders. Pages redeploys in a minute or two. A new folder is a new repository:
+  `gh repo create <owner>/<name> --public`, push, then switch Pages on for `main`, root
+  (`gh api -X POST repos/<owner>/<name>/pages -f "source[branch]=main" -f "source[path]=/"`).
 - To serve the full set publicly later, put it on a host with HTTP Range and CORS (Cloudflare R2
   and Hugging Face datasets were both checked) and point `dataBase` there. Nothing else changes.
 
@@ -306,7 +428,12 @@ The smoke test adapts to what it finds: with a full set it expects the second cl
 native 30 m; with a reduced copy it expects the page to say so, to stop at the finest level and to
 bring up the note; with sample areas it expects 30 m there, holding the full set's numbers
 (`tile_ref.json` has a window inside each area); with a background it expects every value read
-from it to carry the product's name. It also checks the opening (where the turn starts, that it
+from it to carry the product's name; with several regions it expects each to be named in the
+header, the coverage card and its picture, to have its mark in sight on the resting globe, and,
+for every region after the first, that its button fits it, the cards turn to it, a value of ours
+is under the cursor, a click gives the series of the spot, the mask and not the bounding box
+decides what is the region's, and the Download and Code tabs list its files and examples
+(`tile_ref.json` has three tiles of France for the same byte-for-byte comparison). It also checks the opening (where the turn starts, that it
 ends on the globe view with the panels and the mark in place and none of its classes left), and
 in a phone-sized window that the globe fits its box, that the readout is clear of the legend, that
 "Peninsula" shows the region above the legend, and that the turn waits until the map is scrolled
@@ -328,8 +455,9 @@ session cookie, pass it to the smoke test as `SMOKE_COOKIE="name=value"`.
 URL parameters the app understands: `embed=1` (fixed map height, reports its height to the parent
 frame), `hidefooter=1` (no logo strip: the page that embeds the portal draws its own),
 `data=/path/` (same-origin tile location), `nas=/path` (a storage path to show in Download and
-Code when there are no public links), `intro=0` (the globe opens at rest, without the opening),
-`view=region` (open on the region with maps instead of the globe),
+Code when there are no public links; `nas_<region id>=/path` for the regions after the first),
+`intro=0` (the globe opens at rest, without the opening), `view=region` (open on the first region
+instead of the globe; `view=<region id>` for any one of them),
 `tab=download|code|about|request`. Bump the `?v=` on the script and style tags in `index.html`
 when you change them.
 
@@ -432,8 +560,14 @@ Left:
    into the citation in the About tab; a licence for this repository. Also the card on
    hydroai.net/data: its Status line, and its loop if the public copy of the tiles changes (see
    "The hub card").
-4. **Other regions.** The app assumes one region with maps (`CAT.bounds`). When a second region is
-   produced, the catalog, the coverage test (`inBounds`) and the notes need to learn about several.
+4. **Other regions.** The app takes any number of regions (see "Regions" for the steps). France was
+   the second (2026-11-21). The buttons over the map and the resting view of the globe were laid
+   out for two: with a third, look again at the room over the map (`.region-btn`, the container
+   rules in `portal.css`) and at whether one view of the globe can still hold every mark.
+5. **Sample areas in France.** The public copy has none there: which areas go public at 30 m is the
+   lab head's decision (see the rules below), and it was asked when France went up. If they are to
+   be the paper's French flux-tower sites, as in Korea, the outlines go into a `--fine` file for
+   that region and its copy is rebuilt.
 
 ## Rules that must survive any redesign
 
@@ -445,14 +579,21 @@ Left:
   wherever a value from it appears, hidden wherever our maps are, and never offered as data. The
   notes on the map say what is published; they do not suggest that maps exist where none do.
 - **Ahead of the paper, 30 m only in the sample areas.** A public copy of the tiles holds nothing
-  finer than 120 m outside the outlines in `pipeline/preview_fine_areas.geojson` — today the
-  paper's eight Korean flux-tower sites. The sample-area tiles are built so that this is true
+  finer than zoom 10 (about 120 m; about 105 m in France) outside the outlines in
+  `pipeline/preview_fine_areas.geojson` — today the paper's eight Korean flux-tower sites, and
+  none in France. The sample-area tiles are built so that this is true
   pixel by pixel; keep it that way. Which areas go in is the lab head's decision, not a
   convenience.
 - **Flag extrapolation.** The model was trained on 2016–2024; months outside are marked in the layer
   card, the record calendar, the pixel chart, the Download table and the CSV.
 - **Never hide gaps.** A regional mean is a mean over observed pixels, so it is always shown next
   to the share of land observed. The default layer is the gap-free annual climatology.
+- **A number beside the map belongs to one region, and says which.** The cards never mix regions:
+  a mean, a share of land observed, a histogram and a calendar are the region in focus's, named in
+  the card ("On the map · France", "France mean"). Where that region has no map of the layer on
+  show the card says so; it does not fall back on another region's numbers.
+- **A region is its maps, not the box around them.** What counts as "ours" at a place — for a
+  click, the readout, the notes, the cards — is decided by the region's mask.
 - **30 m is the grid, not the accuracy**, and regions without flux towers are unvalidated. Both
   statements stay in the About tab.
 - **Never promise 30 m where the tiles on hand are coarser.** A reduced copy says what its finest
@@ -465,7 +606,9 @@ Left:
   exists" is the small image in the coverage card.
 - **The page opens on the whole globe.** The only motion of its own is the opening, which ends on
   the globe. An automatic fly-in to the peninsula was tried and dropped (November 2026): the first
-  thing a visitor sees is the Earth.
+  thing a visitor sees is the Earth. **Every region with maps is in sight there, with its mark.**
+  (With two regions the globe therefore faces the middle of them and no longer one of them; that
+  was put to the lab head when France went up.)
 - **The opening leaves nothing behind.** Its classes come off `<html>` when it is done and its
   animations fill backwards only. Otherwise the cards rise again each time a tab is reopened, and a
   panel that fades for another reason (the coverage card's `.dim`) is stuck at the animation's end.
@@ -558,6 +701,33 @@ Left:
 - **`tileZoom()` is capped at the source's top zoom, not the copy's.** With sample areas the source
   goes to zoom 12 while most of the map is zoom-10 cells enlarged; what the numbers stand for at a
   place is `topZoomAt()`, and every label asks that.
+
+- **A box is not a region.** The first build treated a place as "ours" when it lay inside the
+  bounding box of the grid. For the Korean Peninsula the box holds a little of China and Russia
+  and nobody noticed; the box of France's grid holds Belgium, Switzerland, half of northern Italy
+  and Catalonia, where the page would have kept quiet about showing the background. Hence the
+  mask in the catalog and `regionAt`.
+- **`setTiles` with the same address still reloads the tiles.** The map blinks. When only the
+  region in focus changes, the layer on the map is the same; `applyLayer` and `syncBackground`
+  remember what the sources were last given and leave them alone unless it changed (it does when
+  the colour scale is stretched to the region's own range).
+- **The cards must not follow the map while it is on its way somewhere.** A flight from one region
+  to another starts over the old one, and the opening turn passes over whatever lies on its way;
+  with the cards following every frame they flipped back and forth. `flyingTo` and `introRunning`
+  hold them until the move is over (or the visitor takes the map).
+- **Asking a PMTiles archive for tiles one by one is slow in Python.** `Reader.get` walks the
+  directories again for every tile: the first mask builder took three minutes for the peninsula.
+  `tiles_at` in `make_catalog.py` walks them once (2.5 s).
+- **A marker behind the globe is still drawn**, at a fifth of its strength, unless it is made with
+  `opacityWhenCovered: "0"`. With one region facing the visitor nobody saw it; with two, turning
+  the globe leaves the other's mark hanging in space.
+- **A button per region needs room.** Two region buttons, the "Go to" list, "Globe" and the
+  opacity slider are 505 px wide; the coverage card ends 284 px from the left. Container rules
+  drop the slider below an 850 px map and the region buttons below 700 px, where the "Go to"
+  list (which starts with the regions) and the choice above the cards do their work.
+- **A wide region runs under the coverage card.** Fitting France in the middle of the map put
+  Brittany behind the card. `fitRegion` fits a region beside the card when it would otherwise
+  reach under it; a narrow one (the peninsula) stays in the middle as before.
 
 ## Not done yet
 

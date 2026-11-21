@@ -10,7 +10,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600&family=Source+Serif+4:opsz,wght@8..60,500;8..60,600&display=swap" />
 <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5.24.1/dist/maplibre-gl.css" />
-<link rel="stylesheet" href="css/portal.css?v=20261117b" />
+<link rel="stylesheet" href="css/portal.css?v=20261121a" />
 </head>
 <body>
 
@@ -32,7 +32,7 @@
     <div><dt>Resolution</dt><dd>30 m</dd></div>
     <div><dt>Time step</dt><dd>Monthly</dd></div>
     <div><dt>Record</dt><dd id="factRecord">—</dd></div>
-    <div><dt>Available now</dt><dd>Korean Peninsula</dd></div>
+    <div><dt>Available now</dt><dd id="factRegions">Korean Peninsula</dd></div>
     <div><dt>Other regions</dt><dd>On request</dd></div>
   </dl>
 </header>
@@ -82,9 +82,9 @@
         <div class="map-ui map-tl" id="coverCard">
           <p class="mini-h">Coverage</p>
           <!-- A fixed picture, made by pipeline/make_coverage_map.py from the tiles: regions with data in colour, all other land grey. -->
-          <img class="cov-map" id="covMap" src="assets/coverage-world.svg?v=20261115i" width="720" height="316" draggable="false"
+          <img class="cov-map" id="covMap" src="assets/coverage-world.svg?v=20261121a" width="720" height="316" draggable="false"
                alt="World map. The Korean Peninsula is coloured and ringed; all other land is grey." />
-          <p class="cov-row"><span class="sw sw-avail"></span><span><b>Available now</b> · Korean Peninsula</span></p>
+          <p class="cov-row"><span class="sw sw-avail"></span><span><b>Available now</b> · <span id="covRegions">Korean Peninsula</span></span></p>
           <p class="cov-row"><span class="sw sw-demand"></span><span><b>On request</b> · any other land area</span></p>
           <!-- the small squares on the map: areas a reduced copy of the tiles keeps at 30 m -->
           <p class="cov-row" id="covFine" hidden><span class="sw sw-fine"></span><span></span></p>
@@ -138,8 +138,13 @@
     </div>
 
     <aside class="side">
+      <!-- With several regions: the one the cards below describe. They follow the map; a choice here takes the map there. -->
+      <div class="regionbar" id="regionBar" hidden>
+        <span class="mini-h" id="regionLabel">Region</span>
+        <div class="seg seg-sm" id="regionSeg" role="group" aria-labelledby="regionLabel"></div>
+      </div>
       <section class="card" id="cardLayer">
-        <p class="mini-h">On the map</p>
+        <p class="mini-h" id="lyKicker">On the map</p>
         <h2 id="lyTitle">—</h2>
         <p class="sub" id="lySub"></p>
         <div class="tiles">
@@ -200,9 +205,10 @@
       <div><p class="mini-h">Please cite</p><p>If you use these data, cite the paper: Choi, E., Kim, S., and Kim, H. Prithvi-OpenET: Geospatial Foundation Model-Based 30 m Monthly Evapotranspiration Estimation beyond the Conterminous United States with Landsat and Sentinel-2 Imagery. Manuscript under review; the reference and DOI will be given here at publication.</p></div>
       <div><p class="mini-h">Research collaboration</p><p>For joint work with Prithvi-OpenET — other regions or periods, model adaptation, validation or application studies — write to Hyunglok Kim, <a href="mailto:hyunglokkim@gist.ac.kr">hyunglokkim@gist.ac.kr</a> (HydroAI Lab, GIST).</p></div>
     </div>
-    <p class="lead">One Cloud-Optimized GeoTIFF per month. Each file holds the whole peninsula at 30 m and can be read in part over HTTP, so you rarely need the full archive.</p>
+    <p class="lead" id="dlLead">One Cloud-Optimized GeoTIFF per month. Each file holds the whole peninsula at 30 m and can be read in part over HTTP, so you rarely need the full archive.</p>
     <div class="notice" id="dlNotice"></div>
     <div class="dl-tools">
+      <label hidden>Region <select id="dlRegion"></select></label>
       <label>Year <select id="dlYear"></select></label>
       <button class="ghost" id="dlCopy">Copy file list</button>
       <button class="ghost" id="dlSums">Download checksums (SHA-256)</button>
@@ -218,7 +224,7 @@
     <table class="grid spec">
       <tbody>
         <tr><th>Format</th><td>Cloud-Optimized GeoTIFF, ZSTD compression, 512-px blocks, 7 overview levels</td></tr>
-        <tr><th>Grid</th><td>EPSG:5179 (Korea 2000 / Unified CS), 30 m, 22,403 × 36,677 pixels</td></tr>
+        <tr><th>Grid</th><td id="dlGrid">EPSG:5179 (Korea 2000 / Unified CS), 30 m, 22,403 × 36,677 pixels</td></tr>
         <tr><th>Band 1</th><td>ET, mm/month × 10 (divide by 10). Mean of nine models trained on different flux-tower folds.</td></tr>
         <tr><th>Band 2</th><td>Standard deviation among the nine models, mm/month × 10. It shows where the models disagree; it is not a total error.</td></tr>
         <tr><th>No data</th><td>65535 — the pixel had no clear-sky observation that month (or is not land)</td></tr>
@@ -233,6 +239,7 @@
   <div class="prose-wide">
     <h2 class="pane-h">Use in code</h2>
     <p class="lead">The files are Cloud-Optimized GeoTIFFs: open one by URL or path and read only the window you need.</p>
+    <p class="dl-tools" hidden><label>Examples for <select id="codeRegion"></select></label></p>
 
     <h3>Python — read an area of interest</h3>
     <pre class="code" id="codePy"></pre>
@@ -243,7 +250,7 @@
     <button class="ghost copy" data-copy="codeTs">Copy</button>
 
     <h3>QGIS</h3>
-    <p>Layer → Add Layer → Add Raster Layer, source type <i>Protocol: HTTP(S)</i> (or <i>File</i> on the lab storage), then paste the file address. QGIS reads the overviews first, so the whole peninsula opens quickly. Set the band rendering to <i>Singleband pseudocolor</i> on band 1 and remember the values are mm/month × 10.</p>
+    <p>Layer → Add Layer → Add Raster Layer, source type <i>Protocol: HTTP(S)</i> (or <i>File</i> on the lab storage), then paste the file address. QGIS reads the overviews first, so a whole region opens quickly. Set the band rendering to <i>Singleband pseudocolor</i> on band 1 and remember the values are mm/month × 10.</p>
 
     <h3>Browse tiles</h3>
     <p>The map on this site does not use pictures of the data. It reads 8-bit numeric tiles (one PMTiles file per month, Web Mercator, <span id="tilesZoom">zoom 3–12</span>) in which each pixel stores ET in whole mm/month, and colours them in the browser. They are meant for looking, not for analysis: they are resampled and rounded. Use the GeoTIFFs for any calculation.</p>
@@ -255,7 +262,7 @@
  <div class="about">
   <article class="prose">
     <h2 class="pane-h">About the data</h2>
-    <p class="lead">Monthly evapotranspiration (ET) at 30 m for the Korean Peninsula, <span id="abRecord">April 2013 to August 2026</span>, estimated with Prithvi-OpenET-Tower.</p>
+    <p class="lead">Monthly evapotranspiration (ET) at 30 m for <span id="abRegions">the Korean Peninsula</span>, <span id="abRecord">April 2013 to August 2026</span>, estimated with Prithvi-OpenET-Tower.</p>
 
     <h3 id="ab-model">The model</h3>
     <p>Prithvi-OpenET builds on Prithvi-EO-2.0, a geospatial foundation model pretrained on Harmonized Landsat and Sentinel-2 (HLS) imagery. It was first trained over the conterminous United States to reproduce the five ensemble members of OpenET from HLS reflectance, and then adapted to observations from 283 flux-tower sites around the world. The adapted model is Prithvi-OpenET-Tower, and it made these maps.</p>
@@ -276,7 +283,8 @@
       <li>Each map is the mean of nine models trained on different groups of flux towers. Their spread is kept as a second band.</li>
       <li>The model ran in overlapping 224-pixel windows that were blended together, and a correction removed the steps that MERRA-2 grid cells would otherwise leave in the map.</li>
       <li>A pixel with no clear-sky observation in a month is left empty. Nothing is gap-filled.</li>
-      <li>South and North Korea were processed separately and merged on one 30 m grid.</li>
+      <li data-for-region="kp">Korean Peninsula: South and North Korea were processed separately and merged on one 30 m grid (EPSG:5179).</li>
+      <li data-for-region="fr" hidden>France: the mainland and Corsica were processed as one region on the Lambert-93 grid (EPSG:2154); the overseas territories are not included. The correction for MERRA-2 grid cells uses the constant fitted for the Korean maps.</li>
     </ul>
 
     <h3 id="ab-read">Read this before you use the numbers</h3>
@@ -284,9 +292,9 @@
       <li id="abPreview" hidden></li>
       <li id="abBg" hidden></li>
       <li><b>Training period.</b> The model was trained on 2016–2024. Months before 2016 and after 2024 are extrapolations in time and are marked as such on this site and in each file.</li>
-      <li><b>Gaps.</b> Empty pixels are common in the summer monsoon and in 2013–2015, when only Landsat was available. A regional mean covers only the pixels that were observed, so read it together with the share of land observed.</li>
+      <li><b>Gaps.</b> Empty pixels are common in 2013–2015, when only Landsat was available. <span data-for-region="kp">Since then they come mostly with the summer monsoon on the Korean Peninsula. </span><span data-for-region="fr" hidden>In France they come mostly in late autumn and winter. </span>A regional mean covers only the pixels that were observed, so read it together with the share of land observed.</li>
       <li><b>30 m is the grid, not the accuracy.</b> Accuracy at single pixels and single fields has not been verified, and many Korean fields are smaller than a pixel.</li>
-      <li><b>North Korea.</b> There are no flux towers to check the estimates against.</li>
+      <li data-for-region="kp"><b>North Korea.</b> There are no flux towers to check the estimates against.</li>
       <li><b>Model spread is not total uncertainty.</b> Band 2 shows only how much the nine models disagree.</li>
       <li><b>Missing month.</b> <span id="abMissing">September 2025</span> was not produced because an input was unavailable.</li>
     </ul>
@@ -309,7 +317,7 @@
         <div><dt>Variable</dt><dd>Evapotranspiration, mm per month</dd></div>
         <div><dt>Grid</dt><dd>30 m, monthly</dd></div>
         <div><dt>Record</dt><dd id="glRecord">April 2013 – August 2026</dd></div>
-        <div><dt>Coverage</dt><dd>Korean Peninsula; other regions on request</dd></div>
+        <div><dt>Coverage</dt><dd id="glCoverage">Korean Peninsula; other regions on request</dd></div>
         <div><dt>Model</dt><dd>Prithvi-OpenET-Tower, mean of nine models</dd></div>
         <div><dt>Trained on</dt><dd>2016–2024; other months are extrapolated</dd></div>
         <div><dt>Files</dt><dd>Cloud-Optimized GeoTIFF, one per month</dd></div>
@@ -364,7 +372,7 @@
           <label>East <input name="e" type="number" step="0.01" min="-180" max="180" required /></label>
           <label>North <input name="n" type="number" step="0.01" min="-90" max="90" required /></label>
         </div>
-        <p class="form-hint" id="rqArea">Longitude and latitude in degrees. Tip: on the map, zoom in on a place outside Korea and choose “Request this area”.</p>
+        <p class="form-hint" id="rqArea">Longitude and latitude in degrees. Tip: on the map, zoom in on a place that has no ready-made maps and choose “Request this area”.</p>
       </fieldset>
 
       <fieldset>
@@ -415,6 +423,6 @@
 <script src="https://unpkg.com/maplibre-gl@5.24.1/dist/maplibre-gl.js"></script>
 <script src="https://unpkg.com/pmtiles@4.5.0/dist/pmtiles.js"></script>
 <script src="js/config.js?v=20261115n"></script>
-<script src="js/app.js?v=20261117a"></script>
+<script src="js/app.js?v=20261121a"></script>
 </body>
 </html>

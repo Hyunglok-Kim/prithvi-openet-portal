@@ -13,7 +13,14 @@
                  from it is shown with its name.
      fine        small areas that a reduced copy of the tiles keeps at the native zoom. Their tiles
                  sit in a second archive per layer; everywhere else the copy's finest level is
-                 enlarged in the browser. */
+                 enlarged in the browser.
+
+   Regions
+     A region with ready-made maps has a catalog of its own. The page is pointed at one of them (the
+     first region); that catalog lists the others under "regions" and each is read the same way. A
+     layer — the annual mean, July 2021 — is one thing on the map however many regions hold it: a
+     tile is put together from the regions it touches. The cards beside the map describe one region
+     at a time: the one the map is on, or was last on (FOCUS). */
 (() => {
 "use strict";
 
@@ -26,6 +33,8 @@ const Q = new URLSearchParams(location.search);
   if (d && /^\/(?!\/)[\w\-./]*\/$/.test(d)) CFG.dataBase = d;
   const nas = Q.get("nas");                      // lab storage path, shown on the internal copy
   if (nas && /^\/[\w\-./]+$/.test(nas)) CFG.nasPath = nas;
+  CFG.nasMore = {};                              // the same for the regions after the first: nas_<region id>=/path
+  for (const [k, v] of Q) if (/^nas_[a-z0-9]+$/.test(k) && /^\/[\w\-./]+$/.test(v)) CFG.nasMore[k.slice(4)] = v;
 }
 const EMBED = Q.get("embed") === "1";
 if (EMBED) document.documentElement.classList.add("embed");
@@ -46,8 +55,16 @@ const TILE = 256;
    Those numbers hold for a globe centred on 18°N, as HDCA's is. MapLibre keeps the scale at the centre
    of a globe equal to the flat map's there, so the globe is drawn larger by 1/cos(latitude of its centre):
    centred on our 30°N it would be a tenth larger at the same zoom. That much zoom is taken off, and the
-   globe is the same size on screen as HDCA's. */
+   globe is the same size on screen as HDCA's.
+   With one region the globe faces that region. With several it faces the middle of them, so that each is in
+   sight with its mark: the longitude halfway between the westernmost and the easternmost, the latitude as
+   before, so the globe keeps its size (faceRegions, once the catalogs are read). */
 const GLOBE = { center: [127.6, 30], zoom: 1.55, sizedAt: 18 };
+function faceRegions() {
+  if (REG.length < 2) return;
+  const lons = REG.map(midLon);
+  GLOBE.center = [Math.round((Math.min(...lons) + Math.max(...lons)) / 2 * 10) / 10, GLOBE.center[1]];
+}
 const NOPAD = { top: 0, bottom: 0, left: 0, right: 0 };
 function globeView() {
   const box = document.getElementById("map"), card = document.getElementById("coverCard"), rad = Math.PI / 180;
@@ -67,8 +84,8 @@ function globeView() {
   return { center: GLOBE.center, zoom: zoom - larger, padding: { ...NOPAD, left } };
 }
 /* The opening. The page does not just appear. The globe comes in turning: it starts 140° to the west and
-   22° to the south (over West Africa), at half its size, and sweeps across Africa and Asia to settle on our
-   maps, fast at first and slowing into place. As it slows the panels over the map come up one after another,
+   22° to the south of where it will rest, at half its size, and sweeps east to settle on our maps, fast at
+   first and slowing into place. As it slows the panels over the map come up one after another,
    the mark on the region lands, and meanwhile the cards beside the map rise in turn. Under four seconds in
    all. The lab's HDCA portal opens with the same sweep (140° from the west, growing from about half size)
    and then keeps turning slowly; ours comes to rest, because the globe has somewhere to be: facing the
@@ -86,11 +103,24 @@ const FIXED_RANGE = { month: [0, 180], clim: [0, 180], annual: [400, 1100] };
 const RAMP = ["#ffffd9", "#edf8b1", "#c7e9b4", "#7fcdbb", "#41b6c4", "#1d91c0", "#225ea8", "#253494", "#081d58"]
   .map((h) => [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)]);
 const COVER_STEPS = ["#D9E8F1", "#A9CBDF", "#74A9C9", "#2E7BA8", "#1F5F85"];   // one hue, light → dark
-const CITIES = [["Seoul", 126.978, 37.5665], ["Busan", 129.0756, 35.1796], ["Incheon", 126.7052, 37.4563],
-  ["Daegu", 128.6014, 35.8714], ["Daejeon", 127.3845, 36.3504], ["Gwangju", 126.8526, 35.1595],
-  ["Ulsan", 129.3114, 35.5384], ["Jeju", 126.5312, 33.4996], ["Gangneung", 128.8761, 37.7519],
-  ["Jeonju", 127.148, 35.8242], ["Pyongyang", 125.7625, 39.0392], ["Hamhung", 127.5364, 39.9183],
-  ["Chongjin", 129.7758, 41.7956], ["Wonsan", 127.4433, 39.1528], ["Sinuiju", 124.3981, 40.1006]];
+/* Our own place names, by region id: the basemap carries none (see "Basemap without labels" in CLAUDE.md). */
+const CITIES = {
+  kp: [["Seoul", 126.978, 37.5665], ["Busan", 129.0756, 35.1796], ["Incheon", 126.7052, 37.4563],
+    ["Daegu", 128.6014, 35.8714], ["Daejeon", 127.3845, 36.3504], ["Gwangju", 126.8526, 35.1595],
+    ["Ulsan", 129.3114, 35.5384], ["Jeju", 126.5312, 33.4996], ["Gangneung", 128.8761, 37.7519],
+    ["Jeonju", 127.148, 35.8242], ["Pyongyang", 125.7625, 39.0392], ["Hamhung", 127.5364, 39.9183],
+    ["Chongjin", 129.7758, 41.7956], ["Wonsan", 127.4433, 39.1528], ["Sinuiju", 124.3981, 40.1006]],
+  fr: [["Paris", 2.3522, 48.8566], ["Marseille", 5.3698, 43.2965], ["Lyon", 4.8357, 45.764],
+    ["Toulouse", 1.4442, 43.6047], ["Nice", 7.262, 43.7102], ["Nantes", -1.5536, 47.2184],
+    ["Strasbourg", 7.7521, 48.5734], ["Bordeaux", -0.5792, 44.8378], ["Lille", 3.0573, 50.6292],
+    ["Rennes", -1.6778, 48.1173], ["Montpellier", 3.8767, 43.6108], ["Brest", -4.4861, 48.3904],
+    ["Clermont-Ferrand", 3.087, 45.7772], ["Dijon", 5.0415, 47.322], ["Ajaccio", 8.7369, 41.9192]],
+};
+/* A place for the code examples of each region: a box to read and a point for a series. */
+const EXAMPLES = {
+  kp: { box: [127.15, 38.10, 127.45, 38.30], boxName: "the Cheorwon plain", point: [127.28, 38.20] },
+  fr: { box: [1.45, 48.05, 1.80, 48.30], boxName: "the Beauce plain", point: [1.63, 48.20] },
+};
 
 /* ───────────────────────────── small helpers ───────────────────────────── */
 const $ = (s) => document.querySelector(s);
@@ -170,10 +200,16 @@ const hideTip = () => { tip.hidden = true; };
 
 /* ───────────────────────────── state ───────────────────────────── */
 let CAT = null, map = null, landGeo = null, popup = null, pickMarker = null;
-const L = new Map();                 // layer id → layer record
+/* The regions with ready-made maps, the first one first (addRegion says what a region holds), and the one the
+   cards beside the map describe. LAYERS has every layer that some region holds, with what is common to it in
+   all of them (kind, label, units, step); a region's own record of a layer — its file, its statistics — is
+   in R.L. */
+const REG = [];
+let FOCUS = null;
+const LAYERS = new Map();            // layer id → { id, kind, label, units, dn_step, ym or month }
 let BG = null;                       // the background product (catalog.background), or null
 const BGL = new Map();               // background layer id → record
-let FINE = [], FINE_ZOOM = 0, FINE_WHAT = "";      // areas a reduced copy keeps at the native zoom (catalog.fine), that zoom, and what the areas are
+let FINE = [];                       // areas a reduced copy keeps at the native zoom (catalog.fine), of all regions; each knows its region
 const state = { mode: "annual", ym: null, climMonth: 7, scale: "fixed", opacity: 1, pick: null,
                 seriesYear: null, playing: null };
 const lut32 = new Uint32Array(256), lutBg = new Uint32Array(256);
@@ -181,11 +217,17 @@ let lutKey = "";
 let chartModel = null;
 
 function currentLayerId() {
-  if (state.mode === "annual" && L.has("clim_annual")) return "clim_annual";
+  if (state.mode === "annual" && LAYERS.has("clim_annual")) return "clim_annual";
   if (state.mode === "clim") return `clim_${String(state.climMonth).padStart(2, "0")}`;
   return "et_" + state.ym.replace("-", "");
 }
-const currentLayer = () => L.get(currentLayerId());
+/* The layer on show as the region in focus holds it. Where that region has no map of it (a month that was not
+   produced there), what is common to the layer, marked `missing`: the cards then say so instead of showing
+   another region's numbers. */
+function currentLayer() {
+  const id = currentLayerId();
+  return (FOCUS && FOCUS.L.get(id)) || { ...LAYERS.get(id), missing: true };
+}
 /* The background layer that stands behind the layer on show, when the catalog has one for it
    ("annual", or the layer's own id). No stand-ins: a July map never gets an annual background. */
 function currentBg() {
@@ -194,7 +236,7 @@ function currentBg() {
   return BGL.get(ly.kind === "annual" ? "bg_annual" : "bg_" + ly.id) || null;
 }
 function currentRange(ly) {
-  if (state.scale === "fixed") return FIXED_RANGE[ly.kind];
+  if (state.scale === "fixed" || ly.missing) return FIXED_RANGE[ly.kind];
   const step = ly.kind === "annual" ? 50 : 10;
   const lo = Math.floor(ly.p02 / step) * step, hi = Math.ceil(ly.p98 / step) * step;
   return [lo, Math.max(hi, lo + step)];
@@ -202,19 +244,15 @@ function currentRange(ly) {
 
 /* ───────────────────────────── numeric tiles ───────────────────────────── */
 const archives = new Map(), dnCache = new Map(), pending = new Map();
-const DN_MAX = 900;
-/* A layer's file is an address relative to the catalog. A copy spread over several sites writes
-   "../other-site/monthly/x.pmtiles" there, so join it properly rather than gluing strings. */
-const fileURL = (rel) => new URL(rel, DATA).href;
-const layerRec = (id) => L.get(id) || BGL.get(id);
-function openArchive(key, rel) {
-  let a = archives.get(key);
-  if (!a) { a = new pmtiles.PMTiles(new pmtiles.FetchSource(fileURL(rel))); archives.set(key, a); }
+const DN_MAX = 1800;            // a tile that one region alone fills is listed twice (regionDN, getDN) and held once
+/* An archive by its address. A layer's file is written in its catalog relative to that catalog — a copy
+   spread over several sites writes "../other-site/monthly/x.pmtiles" — and addRegion has joined the two. */
+function openArchive(url) {
+  let a = archives.get(url);
+  if (!a) { a = new pmtiles.PMTiles(new pmtiles.FetchSource(url)); archives.set(url, a); }
   return a;
 }
-const archive = (id) => openArchive(id, layerRec(id).file);
-/* The layer's second archive, with the native-zoom tiles of the sample areas (a reduced copy only). */
-const fineArchive = (id) => (L.has(id) && L.get(id).fine ? openArchive(id + "#fine", L.get(id).fine) : null);
+const overlaps = (a, b) => a[0] < b[2] && a[2] > b[0] && a[1] < b[3] && a[3] > b[1];      // two [west, south, east, north] boxes
 async function readTile(a, z, x, y) {
   const res = await a.getZxy(z, x, y);
   return res && res.data && res.data.byteLength ? decodeDN(res.data) : null;
@@ -272,16 +310,12 @@ async function decodeDN(buf) {
   }
   return decodeViaCanvas(buf);
 }
-function getDN(id, z, x, y) {
-  const key = `${id}/${z}/${x}/${y}`;
+/* One decoded tile, kept. `make` is asked only when the tile is neither in hand nor on its way. */
+function cached(key, make) {
   if (dnCache.has(key)) { const v = dnCache.get(key); dnCache.delete(key); dnCache.set(key, v); return Promise.resolve(v); }
   if (pending.has(key)) return pending.get(key);
   const p = (async () => {
-    let dn;
-    if (BGL.has(id)) dn = z <= BG.zoom.max ? await readTile(archive(id), z, x, y) : null;
-    else if (z < CAT.zoom.min) dn = await coarserDN(id, z, x, y);
-    else if (z > CAT.zoom.max) dn = await finerDN(id, z, x, y);
-    else dn = await readTile(archive(id), z, x, y);
+    const dn = await make();
     dnCache.set(key, dn);
     if (dnCache.size > DN_MAX) dnCache.delete(dnCache.keys().next().value);
     return dn;
@@ -289,17 +323,42 @@ function getDN(id, z, x, y) {
   pending.set(key, p);
   return p;
 }
+/* A tile of a layer as one region holds it: read from that region's archive, or made from it where the map
+   asks for a zoom the archive does not have (coarserDN, finerDN). */
+function regionDN(R, id, z, x, y) {
+  return cached(`${R.id}:${id}/${z}/${x}/${y}`, () => {
+    const ly = R.L.get(id);
+    if (!ly) return null;
+    if (z < R.zoom.min) return coarserDN(R, id, z, x, y);
+    if (z > R.zoom.max) return finerDN(R, id, z, x, y);
+    return readTile(openArchive(ly.url), z, x, y);
+  });
+}
+/* A tile of a layer as the map shows it: the background's own tile, or the tiles of the regions it touches
+   laid together. From the archives' coarsest zoom on, regions that lie apart never share a tile; only the few
+   tiles of the far-out globe do. The regions' tiles of one layer count in the same step (dn_step). */
+function getDN(id, z, x, y) {
+  return cached(`${id}/${z}/${x}/${y}`, async () => {
+    if (BGL.has(id)) return z <= BG.zoom.max ? readTile(openArchive(BGL.get(id).url), z, x, y) : null;
+    const b = tileBounds(z, x, y);
+    const parts = (await Promise.all(REG.filter((R) => R.L.has(id) && overlaps(b, R.bounds)).map((R) => regionDN(R, id, z, x, y)))).filter(Boolean);
+    if (parts.length < 2) return parts[0] || null;
+    const out = parts[0].slice();
+    for (const p of parts.slice(1)) for (let i = 0; i < out.length; i++) if (out[i] === 255) out[i] = p[i];
+    return out;
+  });
+}
 /* The archives start at zoom 3; with the globe zoomed far out the map asks for zoom 0-2. Those few tiles
    are averaged here from the zoom-3 tiles, with the pipeline's own rule: a pixel is kept when a quarter of
    it has data. Without this the data would vanish from the globe just when the whole Earth is in view. */
-async function coarserDN(id, z, x, y) {
-  const zs = CAT.zoom.min, f = 2 ** (zs - z), b = CAT.bounds;
+async function coarserDN(R, id, z, x, y) {
+  const zs = R.zoom.min, f = 2 ** (zs - z), b = R.bounds;
   const lo = lngLatToTile(b[0], b[3], zs), hi = lngLatToTile(b[2], b[1], zs);
   const sum = new Float32Array(TILE * TILE), cnt = new Uint16Array(TILE * TILE);
   let any = false;
   for (let cy = Math.max(y * f, lo.y); cy <= Math.min(y * f + f - 1, hi.y); cy++) {
     for (let cx = Math.max(x * f, lo.x); cx <= Math.min(x * f + f - 1, hi.x); cx++) {
-      const dn = await getDN(id, zs, cx, cy);
+      const dn = await regionDN(R, id, zs, cx, cy);
       if (!dn) continue;
       any = true;
       const ox = (cx - x * f) * TILE, oy = (cy - y * f) * TILE;
@@ -326,17 +385,14 @@ const tileBounds = (z, x, y) => {
   const n = 2 ** z, lat = (j) => Math.atan(Math.sinh(Math.PI * (1 - 2 * j / n))) * 180 / Math.PI;
   return [x / n * 360 - 180, lat(y + 1), (x + 1) / n * 360 - 180, lat(y)];
 };
-function tileTouchesFine(z, x, y) {
-  const b = tileBounds(z, x, y);
-  return FINE.some((a) => b[0] < a.bounds[2] && b[2] > a.bounds[0] && b[1] < a.bounds[3] && b[3] > a.bounds[1]);
-}
-async function finerDN(id, z, x, y) {
-  if (z <= FINE_ZOOM && tileTouchesFine(z, x, y)) {
-    const fa = fineArchive(id), dn = fa ? await readTile(fa, z, x, y) : null;
+async function finerDN(R, id, z, x, y) {
+  const ly = R.L.get(id);
+  if (z <= R.fineZoom && ly.fineUrl && R.fine.some((a) => overlaps(tileBounds(z, x, y), a.bounds))) {
+    const dn = await readTile(openArchive(ly.fineUrl), z, x, y);      // the layer's second archive: the native-zoom tiles of the sample areas
     if (dn) return dn;
   }
-  const zs = CAT.zoom.max, d = z - zs, n = TILE >> d;
-  const up = await getDN(id, zs, x >> d, y >> d);
+  const zs = R.zoom.max, d = z - zs, n = TILE >> d;
+  const up = await regionDN(R, id, zs, x >> d, y >> d);
   if (!up || n < 1) return null;
   const ox = (x - ((x >> d) << d)) * n, oy = (y - ((y >> d) << d)) * n, out = new Uint8Array(TILE * TILE);
   let any = false;
@@ -362,7 +418,7 @@ function buildLUT() {
 function registerProtocol() {
   maplibregl.addProtocol("etn", async (params) => {
     const m = /^etn:\/\/([^/]+)\/(\d+)\/(\d+)\/(\d+)/.exec(params.url);
-    const dn = m && layerRec(m[1]) ? await getDN(m[1], +m[2], +m[3], +m[4]) : null;
+    const dn = m && (LAYERS.has(m[1]) || BGL.has(m[1])) ? await getDN(m[1], +m[2], +m[3], +m[4]) : null;
     if (!dn) return { data: await createImageBitmap(new ImageData(1, 1)) };
     const img = new ImageData(TILE, TILE), px = new Uint32Array(img.data.buffer), lut = BGL.has(m[1]) ? lutBg : lut32;
     for (let i = 0; i < px.length; i++) px[i] = lut[dn[i]];
@@ -373,29 +429,78 @@ const tileURL = () => `etn://${currentLayerId()}/{z}/{x}/{y}?k=${lutKey}`;
 const bgTileURL = (bg) => `etn://${bg.id}/{z}/{x}/{y}?k=${lutKey}`;
 
 /* ───────────────────────────── catalog ───────────────────────────── */
-async function loadCatalog() {
-  const r = await fetch(DATA + "catalog.json", { cache: "no-cache" });
+async function fetchCatalog(url) {
+  const r = await fetch(url, { cache: "no-cache" });
   if (r.status === 401 || r.status === 403) {
     if (window.parent !== window) window.parent.postMessage({ type: "portalAuth" }, "*");
     throw new Error("Sign-in required — open this page from the lab dashboard.");
   }
   if (!r.ok) throw new Error(`Could not load the catalog (HTTP ${r.status}).`);
-  CAT = await r.json();
-  if (CAT.annual) L.set("clim_annual", { ...CAT.annual, kind: "annual", label: `Mean annual ET, ${CAT.record.train[0].slice(0, 4)}–${CAT.record.train[1].slice(0, 4)}` });
-  for (const c of CAT.clim || []) L.set(c.id, { ...c, kind: "clim", label: `${MONL[c.month - 1]} mean, ${CAT.record.train[0].slice(0, 4)}–${CAT.record.train[1].slice(0, 4)}` });
-  for (const m of CAT.months) if (m.tiles) L.set(m.tiles.id, { ...m.tiles, kind: "month", ym: m.ym, rec: m, label: ymLabel(m.ym) });
+  return r.json();
+}
+/* The coverage mask of a catalog (run lengths along the rows, first run empty) as a grid of 0 and 1: see regionAt. */
+function readMask(m) {
+  if (!m || !m.runs) return null;
+  const bits = new Uint8Array(m.w * m.h);
+  let i = 0, v = 0;
+  for (const n of m.runs) { if (v) bits.fill(1, i, i + n); i += n; v ^= 1; }
+  return { zoom: m.zoom, x0: m.x0, y0: m.y0, w: m.w, h: m.h, bits };
+}
+/* One region, from its catalog: its names, where it is, its record, and its own record of every layer (R.L),
+   with the addresses of the files. Addresses in a catalog are relative to that catalog. */
+function addRegion(cat, url) {
+  const info = cat.region || { id: "kp", name: "Korean Peninsula", short: "Peninsula", the: "the Korean Peninsula" };      // a catalog from before regions had names
+  const train = `${cat.record.train[0].slice(0, 4)}–${cat.record.train[1].slice(0, 4)}`, at = (rel) => new URL(rel, url).href;
+  const R = { id: info.id, name: info.name, short: info.short || info.name, the: info.the || info.name, cat, url, bounds: cat.bounds, zoom: cat.zoom,
+              record: cat.record, months: cat.months, version: cat.version, mask: readMask(cat.mask), L: new Map(), fine: [], fineZoom: 0, fineWhat: "" };
+  const put = (rec, more) => {
+    const ly = { ...rec, ...more, url: at(rec.file), fineUrl: rec.fine ? at(rec.fine) : "", region: R };
+    R.L.set(ly.id, ly);
+    if (!LAYERS.has(ly.id)) LAYERS.set(ly.id, { id: ly.id, kind: ly.kind, label: ly.label, units: ly.units, dn_step: ly.dn_step, ym: ly.ym, month: ly.month });
+  };
+  if (cat.annual) put(cat.annual, { kind: "annual", label: `Mean annual ET, ${train}` });
+  for (const c of cat.clim || []) put(c, { kind: "clim", label: `${MONL[c.month - 1]} mean, ${train}` });
+  for (const m of cat.months) if (m.tiles) put(m.tiles, { kind: "month", ym: m.ym, rec: m, label: ymLabel(m.ym) });
+  if (cat.fine && (cat.fine.areas || []).length && cat.fine.zoom > cat.zoom.max) {
+    R.fine = cat.fine.areas.map((a) => ({ ...a, region: R })); R.fineZoom = cat.fine.zoom; R.fineWhat = cat.fine.what || "";
+  }
+  REG.push(R);
+  return R;
+}
+/* A link may ask for a region instead of the globe: view=region (the first one) or view=<region id>. */
+const viewRegion = () => { const v = Q.get("view"); return v === "region" ? REG[0] : (v && REG.find((R) => R.id === v)) || null; };
+async function loadCatalog() {
+  const home = DATA + "catalog.json";
+  CAT = await fetchCatalog(home);
+  addRegion(CAT, home);
+  /* The other regions, each with a catalog of its own, listed by the first. One that cannot be read is left
+     out and the page works with the rest. */
+  const more = await Promise.all((CAT.regions || []).map(async (r) => {
+    const url = new URL(r.catalog, home).href;
+    try { return [await fetchCatalog(url), url]; } catch (e) { console.warn(`[catalog] region "${r.id}" not loaded:`, e.message); return null; }
+  }));
+  for (const m of more) if (m && (m[0].months || []).length) addRegion(m[0], m[1]);
+  FOCUS = viewRegion() || REG[0];
+  FINE = REG.flatMap((R) => R.fine);
+  faceRegions();
   if (CAT.background && CAT.background.layers && Object.keys(CAT.background.layers).length) {
     BG = CAT.background;
-    for (const ly of Object.values(BG.layers)) BGL.set(ly.id, { ...ly, kind: "bg" });
+    for (const ly of Object.values(BG.layers)) BGL.set(ly.id, { ...ly, kind: "bg", url: new URL(ly.file, home).href });
   }
-  if (CAT.fine && (CAT.fine.areas || []).length && CAT.fine.zoom > CAT.zoom.max) { FINE = CAT.fine.areas; FINE_ZOOM = CAT.fine.zoom; FINE_WHAT = CAT.fine.what || ""; }
-  const built = CAT.months.filter((m) => m.tiles);
-  if (!L.size) throw new Error("The catalog lists no browse tiles yet.");
-  const julys = built.filter((m) => m.ym.endsWith("-07") && m.period === "train");
-  state.ym = (julys[julys.length - 1] || built[built.length - 1] || {}).ym || null;
+  if (!LAYERS.size) throw new Error("The catalog lists no browse tiles yet.");
+  const built = builtMonths(), train = CAT.record.train;
+  const julys = built.filter((ym) => ym.endsWith("-07") && ym >= train[0] && ym <= train[1]);
+  state.ym = julys[julys.length - 1] || built[built.length - 1] || null;
   state.seriesYear = state.ym ? state.ym.slice(0, 4) : null;
-  if (!L.has("clim_annual")) state.mode = (CAT.clim || []).length ? "clim" : "month";
+  if (!LAYERS.has("clim_annual")) state.mode = climMonths().length ? "clim" : "month";
 }
+/* The months, and the calendar months, that have browse tiles in some region. */
+const builtMonths = () => [...LAYERS.values()].filter((l) => l.kind === "month").map((l) => l.ym).sort();
+const climMonths = () => [...LAYERS.values()].filter((l) => l.kind === "clim").map((l) => l.month).sort((a, b) => a - b);
+/* The regions in words: "the Korean Peninsula and France" inside a sentence, "Korean Peninsula and France" as names. */
+const wordList = (a, and = "and") => (a.length < 3 ? a.join(` ${and} `) : `${a.slice(0, -1).join(", ")} ${and} ${a[a.length - 1]}`);
+const theRegions = (and) => wordList(REG.map((R) => R.the), and);
+const regionNames = () => wordList(REG.map((R) => R.name));
 const TRAIN_YEARS = () => `${CAT.record.train[0].slice(0, 4)}–${CAT.record.train[1].slice(0, 4)}`;
 function demandWindow() {
   const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - CFG.demandLagMonths);      // day 1 first: "31 May minus three months" must not roll into March
@@ -404,7 +509,31 @@ function demandWindow() {
 }
 
 /* ───────────────────────────── map ───────────────────────────── */
-function inBounds(lng, lat) { const b = CAT.bounds; return lng >= b[0] && lng <= b[2] && lat >= b[1] && lat <= b[3]; }
+/* The region whose maps cover a place, or null. The bounding box of a region's grid takes in a good deal of its
+   neighbours (the box around France holds Belgium, Switzerland and much of northern Italy), so a catalog
+   carries a coarse mask of where its maps have values, a cell of it being about 2 km. A catalog without a
+   mask has only the box to go by. */
+function regionAt(lng, lat) {
+  for (const R of REG) {
+    const b = R.bounds;
+    if (lng < b[0] || lng > b[2] || lat < b[1] || lat > b[3]) continue;
+    const m = R.mask;
+    if (!m) return R;
+    const n = TILE * 2 ** m.zoom, s = Math.sin(lat * Math.PI / 180);
+    const i = Math.floor((lng + 180) / 360 * n) - m.x0, j = Math.floor((0.5 - Math.log((1 + s) / (1 - s)) / (4 * Math.PI)) * n) - m.y0;
+    if (i >= 0 && j >= 0 && i < m.w && j < m.h && m.bits[j * m.w + i]) return R;
+  }
+  return null;
+}
+const inBounds = (lng, lat) => !!regionAt(lng, lat);
+const boxRegion = (lng, lat) => REG.find((R) => lng >= R.bounds[0] && lng <= R.bounds[2] && lat >= R.bounds[1] && lat <= R.bounds[3]) || null;
+const midLon = (R) => (R.bounds[0] + R.bounds[2]) / 2, midLat = (R) => (R.bounds[1] + R.bounds[3]) / 2;
+/* Degrees along the Earth between two places. */
+function arcDeg(lng1, lat1, lng2, lat2) {
+  const r = Math.PI / 180, c = Math.sin(lat1 * r) * Math.sin(lat2 * r) + Math.cos(lat1 * r) * Math.cos(lat2 * r) * Math.cos((lng1 - lng2) * r);
+  return Math.acos(clamp(c, -1, 1)) / r;
+}
+const regionsByDistance = (lng, lat) => [...REG].sort((a, b) => arcDeg(lng, lat, midLon(a), midLat(a)) - arcDeg(lng, lat, midLon(b), midLat(b)));
 function onLand(lng, lat) {
   if (!landGeo) return true;
   const hit = (ring) => inRing(ring, lng, lat);
@@ -416,22 +545,35 @@ function onLand(lng, lat) {
 }
 /* The finest tile the ET source can be asked for: the copy's top zoom, or the native zoom when the
    copy keeps sample areas at it (the tiles in between are then made in finerDN). */
-const srcMaxZoom = () => (FINE.length ? FINE_ZOOM : CAT.zoom.max);
+const srcMaxZoom = () => Math.max(...REG.map((R) => (R.fine.length ? R.fineZoom : R.zoom.max)));
 /* MapLibre rounds the zoom for raster sources and 256-px tiles sit one level ahead of the map zoom. */
 const tileZoom = () => clamp(Math.round(map.getZoom() + 1), 0, srcMaxZoom());
 /* A copy of the tiles may stop short of the native grid: a public preview on a host with size limits
    has zoom.max below zoom.native in its catalog. Everything that names a resolution asks here, so the
    page never promises 30 m where the tiles on hand are coarser. */
-const fullRes = () => CAT.zoom.max >= (CAT.zoom.native || CAT.zoom.max);
+const nativeZoom = (R) => R.zoom.native || R.zoom.max;
+const regFull = (R) => R.zoom.max >= nativeZoom(R);
+const fullRes = () => REG.every(regFull);
 const groundRes = (z, lat) => 40075016.686 * Math.cos(lat * Math.PI / 180) / (TILE * 2 ** z);
-const finestRes = () => fmtRes(groundRes(CAT.zoom.max, (CAT.bounds[1] + CAT.bounds[3]) / 2));
+/* The finest level of a region's copy in words, taken at the middle of the region ("120 m"); and of all the
+   regions with a reduced copy at once, for where the page speaks of the whole site ("110–120 m": a tile pixel
+   of one zoom is smaller on the ground the further north the region lies). */
+const finestRes = (R) => fmtRes(groundRes(R.zoom.max, midLat(R)));
+function resRange(v) {
+  const lo = fmtRes(Math.min(...v)), hi = fmtRes(Math.max(...v));
+  return lo === hi ? lo : lo.endsWith(" m") && hi.endsWith(" m") ? `${lo.slice(0, -2)}–${hi}` : `${lo}–${hi}`;
+}
+const finestAll = () => resRange(REG.filter((R) => !regFull(R)).map((R) => groundRes(R.zoom.max, midLat(R))));
 /* A sample area is the one place where a reduced copy does go down to the native grid. What a value
    stands for therefore depends on where it was read. */
 const fineAreaAt = (lng, lat) => FINE.find((a) => lng >= a.bounds[0] && lng <= a.bounds[2] && lat >= a.bounds[1] && lat <= a.bounds[3] && inRing(a.ring, lng, lat)) || null;
-const topZoomAt = (lng, lat) => (fineAreaAt(lng, lat) ? FINE_ZOOM : CAT.zoom.max);      // the finest tile zoom with numbers of its own at that place
-const nativeAt = (lng, lat) => topZoomAt(lng, lat) >= (CAT.zoom.native || CAT.zoom.max);
-const cellNameAt = (lng, lat) => (nativeAt(lng, lat) ? "30 m pixel" : `${finestRes()} cell`);
-const zRegional = () => Math.min(9.2, CAT.zoom.max - 0.3);      // map zoom of the first click-in: tile zoom 10, about 120 m
+const regionOr = (lng, lat) => regionAt(lng, lat) || FOCUS;     // the region a place is in; for a place in none, the one in focus
+/* The finest tile zoom with numbers of its own at a place: the native zoom inside a sample area, elsewhere the
+   top of that region's copy. */
+function topZoomAt(lng, lat) { const a = fineAreaAt(lng, lat); return a ? a.region.fineZoom : regionOr(lng, lat).zoom.max; }
+const nativeAt = (lng, lat) => topZoomAt(lng, lat) >= nativeZoom(regionOr(lng, lat));
+const cellNameAt = (lng, lat) => (nativeAt(lng, lat) ? "30 m pixel" : `${finestRes(regionOr(lng, lat))} cell`);
+const zRegional = (R) => Math.min(9.2, (R || FOCUS).zoom.max - 0.3);      // map zoom of the first click-in: tile zoom 10, about 120 m
 /* Outside the region with maps there is nothing finer than the background. From this map zoom on the
    page says so: where a background cell has grown to about 16 px on screen, and never before the
    coverage card has faded out (7.2), so the note has room at the top of the map. */
@@ -472,7 +614,7 @@ function initMap() {
   buildLUT();
   registerProtocol();
   const bg = currentBg();
-  const gv = globeView(), intro = !(REDUCED || Q.get("intro") === "0" || Q.get("view") === "region");
+  const gv = globeView(), intro = !(REDUCED || Q.get("intro") === "0" || viewRegion());
   const start = intro ? { ...gv, center: [gv.center[0] - INTRO.turn, gv.center[1] - INTRO.south], zoom: Math.max(0, gv.zoom - INTRO.back) } : gv;
   openedHidden = !document.getElementById("map").clientWidth;      // another tab is open: the box has no size yet
   if (intro) {                                                      // the panels over the map wait for the globe (CSS)
@@ -497,9 +639,12 @@ function initMap() {
                attribution: "Imagery © Esri, Maxar, Earthstar Geographics" },
         /* The background: a global product from somewhere else, under our maps (see currentBg). */
         ...(BG ? { ctx: { type: "raster", tileSize: 256, minzoom: 0, maxzoom: BG.zoom.max,
-                          tiles: [bgTileURL(bg || BGL.values().next().value)], attribution: `Background ET: ${BG.name}` } } : {}),
-        et: { type: "raster", tileSize: 256, minzoom: 0, maxzoom: srcMaxZoom(), bounds: CAT.bounds,
-              tiles: [tileURL()], attribution: "ET: Prithvi-OpenET-Tower, HydroAI Lab (GIST)" },
+                          tiles: [(shownBg = bgTileURL(bg || BGL.values().next().value))], attribution: `Background ET: ${BG.name}` } } : {}),
+        /* Our maps: one source for all the regions. Its box takes them all in; a tile that touches none of
+           them comes back empty without anything being fetched (getDN). */
+        et: { type: "raster", tileSize: 256, minzoom: 0, maxzoom: srcMaxZoom(),
+              bounds: [0, 1, 2, 3].map((k) => Math[k < 2 ? "min" : "max"](...REG.map((R) => R.bounds[k]))),
+              tiles: [(shownTiles = tileURL())], attribution: "ET: Prithvi-OpenET-Tower, HydroAI Lab (GIST)" },
       },
       layers: [
         { id: "bg", type: "background", paint: { "background-color": "#0F1318" } },
@@ -516,8 +661,9 @@ function initMap() {
   map.touchZoomRotate.disableRotation();
   map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
   map.addControl(new maplibregl.ScaleControl({ unit: "metric", maxWidth: 110 }), "bottom-left");
-  window.__portal = { map, state, getDN, L, dnCache, exact: () => exactDecode, zoom: CAT.zoom,          // handle for tests and debugging
-                      bg: BG, fine: FINE, fineZoom: FINE_ZOOM, note: () => noteShown,
+  window.__portal = { map, state, getDN, dnCache, exact: () => exactDecode, zoom: CAT.zoom,          // handle for tests and debugging
+                      get L() { return FOCUS.L; }, regions: REG, get focus() { return FOCUS; }, regionAt,
+                      bg: BG, fine: FINE, fineZoom: Math.max(0, ...REG.map((R) => R.fineZoom)), note: () => noteShown,
                       globeView, opening: intro ? { from: start, turn: INTRO.turn, south: INTRO.south, back: INTRO.back } : null };
 
   map.on("error", (e) => console.warn("[map]", e && e.error ? e.error.message : e));
@@ -534,18 +680,22 @@ function initMap() {
     addFineAreas();
     loadLand();
     /* The page opens on the whole globe: it turns into place (see INTRO) and then stays there until the
-       visitor moves in. A link can ask for the region with maps instead (view=region); if the map is
-       not on screen yet (another tab is open), the fit waits until it is. */
-    if (Q.get("view") === "region") { if (map.getContainer().clientWidth) fitRegion(0); else fitWhenShown = true; }
+       visitor moves in. A link can ask for a region with maps instead (view=region, or view=<its id>); if
+       the map is not on screen yet (another tab is open), the fit waits until it is. */
+    const vr = viewRegion();
+    if (vr) { if (map.getContainer().clientWidth) fitRegion(vr, 0); else fitWhenShown = vr; }
     else if (intro) runOpening(start);
   });
   map.on("zoom", onZoom);
   map.on("move", onMove);
+  map.on("movestart", (e) => { if (e.originalEvent) introRunning = false; });      // the visitor has taken over from the opening
+  map.on("moveend", () => { if (flyingTo) { flyingTo = null; onMove(); } });
   map.on("mousemove", onHover);
   map.on("mouseout", () => { $("#roVal").textContent = ""; });
   map.on("click", onClick);
 }
-let fitWhenShown = false, openedHidden = false;
+let fitWhenShown = null, openedHidden = false;
+let flyingTo = null, introRunning = false;      // while the map is on its way to a region, or in its opening turn, the cards do not follow what it passes over
 /* The opening sequence (see INTRO). The classes on <html> drive the CSS part: "opening" keeps the panels
    over the map and the mark out of sight, "opened" lets the panels come up, "arrived" lands the mark,
    "entered" raises the cards beside the map. All of them are taken off again at the end, so nothing replays
@@ -561,7 +711,9 @@ let fitWhenShown = false, openedHidden = false;
 function runOpening(start) {
   const root = document.documentElement, D = INTRO.duration;
   const atStart = () => { const c = map.getCenter(); return !map.isMoving() && Math.abs(c.lng - start.center[0]) < 0.01 && Math.abs(map.getZoom() - start.zoom) < 0.01; };
+  introRunning = true;
   const finish = () => {
+    introRunning = false;
     root.classList.remove("opening", "waiting", "opened", "arrived");
     /* From here on a visitor may not go further out than MIN_ZOOM. If they stopped the turn while it was
        still further out than that, the limit waits until they have come in. */
@@ -613,10 +765,42 @@ function boundsCamera(bounds, padding) {
   if (padded) map.setPadding(keep);
   return cam;
 }
-function fitRegion(duration) {
-  const cam = boundsCamera([[CAT.bounds[0], CAT.bounds[1]], [CAT.bounds[2], CAT.bounds[3]]], fitPadding());
+function fitRegion(R, duration) {
+  const box = [[R.bounds[0], R.bounds[1]], [R.bounds[2], R.bounds[3]]], pad = fitPadding();
+  let cam = boundsCamera(box, pad);
   if (!cam) return;
+  /* A region that is wide for the map would run under the coverage card at the map's top left. It is then
+     fitted beside the card. (A narrow one, like the Korean Peninsula, stays in the middle of the map.) */
+  const card = $("#coverCard"), edge = card.offsetParent !== null ? card.offsetLeft + card.offsetWidth + 12 : 0;
+  if (edge > pad.left) {
+    const across = (R.bounds[2] - R.bounds[0]) / 360 * 512 * 2 ** cam.zoom, w = map.getContainer().clientWidth;
+    if ((w + pad.left - pad.right - across) / 2 < edge) cam = boundsCamera(box, { ...pad, left: edge }) || cam;
+  }
   if (duration) fly({ ...cam, duration }); else map.jumpTo({ ...cam, padding: NOPAD });
+}
+/* To a region: the cards beside the map turn to it and the map fits it — taking longer over the way from
+   another part of the world. Where there is no map (no WebGL), or it is out of sight, only the cards turn. */
+function goRegion(R) {
+  const shown = map && map.getContainer().clientWidth;
+  flyingTo = shown ? R : null;                                    // first: turning the cards looks at where the map is, and it is still on the old region
+  setFocus(R);
+  if (!shown) return;
+  const c = map.getCenter(), far = arcDeg(c.lng, c.lat, midLon(R), midLat(R)) > 25;
+  fitRegion(R, far ? 2600 : 1400);
+  if (!map.isMoving()) flyingTo = null;                           // nothing to wait for: the map was there already
+}
+/* The region the cards beside the map describe. Its numbers change; the layer on the map does not, unless the
+   colour scale is stretched to the region's own range. */
+function setFocus(R) {
+  if (!R || R === FOCUS) return;
+  FOCUS = R;
+  if (state.pick && state.pick.region !== R) clearPick();          // a spot picked in another region: the series card goes with the other cards
+  applyLayer();
+  renderRegionUI();
+}
+function clearPick() {
+  state.pick = null; recordModel = null; $("#recordBox").hidden = true;
+  if (pickMarker) pickMarker.remove();
 }
 /* Room to leave for the panels over the map when a region is fitted. On a narrow map the coverage card
    would sit on the region, so the region is fitted to the right of it. */
@@ -654,14 +838,12 @@ function addFineAreas() {
   fineTags = FINE.map((a) => {
     const btn = el("button", { class: "fine-tag", title: `${a.name}: this area is shown at the native 30 m`,
       onclick: (e) => { e.stopPropagation(); goFine(a); } }, [a.name, el("small", {}, "30 m")]);       // not a click on the map underneath
-    return new maplibregl.Marker({ element: el("div", {}, btn), anchor: "bottom", offset: [0, -3] }).setLngLat([a.center[0], a.bounds[3]]).addTo(map);
+    return new maplibregl.Marker({ element: el("div", {}, btn), anchor: "bottom", offset: [0, -3], opacityWhenCovered: "0" }).setLngLat([a.center[0], a.bounds[3]]).addTo(map);
   });
-  /* The same areas in the "Go to" list, ahead of the cities, and a line for them in the coverage card. */
-  $("#jump").insertBefore(el("optgroup", { label: "30 m areas" }, FINE.map((a) => el("option", { value: "fine:" + a.id }, a.name))), $("#jumpCities"));
-  $("#jump").options[0].textContent = "Go to…";
-  $("#jump").setAttribute("aria-label", "Go to a 30 m area or a city");
-  const row = $("#covFine");
-  row.querySelector("span:last-child").replaceChildren(el("b", {}, "30 m"), ` · ${numWord(FINE.length)} sample area${FINE.length > 1 ? "s" : ""}`);
+  /* A line for them in the coverage card; they are in the "Go to" list as well (buildJump). */
+  const row = $("#covFine"), held = REG.filter((R) => R.fine.length);
+  row.querySelector("span:last-child").replaceChildren(el("b", {}, "30 m"), ` · ${numWord(FINE.length)} sample area${FINE.length > 1 ? "s" : ""}` +
+    (REG.length > 1 ? ` (${wordList(held.map((R) => R.name))})` : ""));
   row.hidden = false;
   onZoom();
 }
@@ -674,7 +856,7 @@ function goFine(a) {
   const box = map.getContainer(), wide = box.clientWidth >= 900;
   const fit = boundsCamera([[a.bounds[0], a.bounds[1]], [a.bounds[2], a.bounds[3]]],
     { top: 86, bottom: 56, left: wide ? 290 : 24, right: wide ? 40 : 24 });      // clear of the controls (the name tag sits above the outline) and, where there is room, the legend
-  const zMin = FINE_ZOOM + 0.6, zMax = FINE_ZOOM + 1.5;                                        // 3 to 5.7 screen px per native pixel
+  const zMin = a.region.fineZoom + 0.6, zMax = a.region.fineZoom + 1.5;                        // 3 to 5.7 screen px per native pixel
   if (fit && fit.zoom >= zMin) fly({ center: fit.center, zoom: Math.min(fit.zoom, zMax), duration: 1800 });
   else fly({ center: a.center, zoom: zMin, duration: 1800 });
 }
@@ -682,27 +864,35 @@ function goFine(a) {
 function fineNear(point) {
   return FINE.find((a) => { const p = map.project(a.center); return Math.hypot(p.x - point.x, p.y - point.y) <= 12; }) || null;
 }
-let cityMarkers = [], pulse = null;
+let cityMarkers = [], pulses = [];
+/* Our place names of all the regions, in one list (the "Go to" list refers to them by their place in it). */
+const places = () => REG.flatMap((R) => (CITIES[R.id] || []).map(([name, lng, lat]) => ({ name, lng, lat, region: R })));
 function addMarkers() {
-  const c = [(CAT.bounds[0] + CAT.bounds[2]) / 2 - 0.6, (CAT.bounds[1] + CAT.bounds[3]) / 2 - 0.6];      // on the region, its label to the right
-  /* No position on the root: MapLibre makes a marker absolute, and overriding that turns it into a
+  /* A mark on every region. Its label goes to the right — or, for a region to the east of where the globe
+     faces, to the left: towards the middle of the globe, so that it stays inside the globe and the map box
+     when the region is near the edge. A mark that has gone round the back of the globe is not shown.
+     No position on the root: MapLibre makes a marker absolute, and overriding that turns it into a
      full-width block whose "centre" is half the map away. */
-  const node = el("div", { style: "width:14px;height:14px" }, [el("div", { class: "pulse" }), el("div", { class: "pulse-label" }, "Available now")]);
-  pulse = new maplibregl.Marker({ element: node, anchor: "center" }).setLngLat(c).addTo(map);
-  cityMarkers = CITIES.map(([name, lng, lat]) =>
-    new maplibregl.Marker({ element: el("div", {}, el("span", { class: "city" }, name)), anchor: "bottom" }).setLngLat([lng, lat]).addTo(map));
+  pulses = REG.map((R) => {
+    const left = midLon(R) > GLOBE.center[0] + 1;
+    const node = el("div", { style: "width:14px;height:14px" }, [el("div", { class: "pulse" }), el("div", { class: "pulse-label" + (left ? " to-left" : "") }, "Available now")]);
+    return new maplibregl.Marker({ element: node, anchor: "center", opacityWhenCovered: "0" }).setLngLat([midLon(R) - 0.6, midLat(R) - 0.6]).addTo(map);
+  });
+  cityMarkers = places().map((p) =>
+    new maplibregl.Marker({ element: el("div", {}, el("span", { class: "city" }, p.name)), anchor: "bottom", opacityWhenCovered: "0" }).setLngLat([p.lng, p.lat]).addTo(map));
   onZoom();
 }
 function onZoom() {
   if (!map) return;
   const z = map.getZoom();
-  if (pulse) pulse.getElement().style.display = z < 4.2 ? "" : "none";
+  for (const p of pulses) p.getElement().style.display = z < 4.2 ? "" : "none";
   for (const m of cityMarkers) m.getElement().firstChild.style.opacity = z >= 5.6 && z <= 10.6 ? "1" : "0";
   /* Far out the areas are a few pixels apart, so each is a small square (its name shows on hover); the
      name tags come in once there is room for them. */
   for (const m of fineTags) { const t = m.getElement().firstChild; t.style.display = z >= 4.2 ? "" : "none"; t.classList.toggle("compact", z < 7); }
   $("#coverCard").classList.toggle("dim", z > 7.2);
-  if (map.getLayer("et")) map.setPaintProperty("et", "raster-resampling", z > CAT.zoom.max - 0.4 ? "nearest" : "linear");
+  const c = map.getCenter();
+  if (map.getLayer("et")) map.setPaintProperty("et", "raster-resampling", z > regionOr(c.lng, c.lat).zoom.max - 0.4 ? "nearest" : "linear");
   onMove();
 }
 /* What depends on where the view is, not only on how far in: the resolution readout, the three-step
@@ -711,14 +901,21 @@ let moveRAF = 0;
 function onMove() { cancelAnimationFrame(moveRAF); moveRAF = requestAnimationFrame(updateView); }
 function updateView() {
   if (!map) return;
-  const z = map.getZoom(), c = map.getCenter(), ours = inBounds(c.lng, c.lat);
+  /* The region the view is on: the one whose maps are under the middle of the map — or, while a whole region
+     is in view, the one whose box the middle is in. A wide region is fitted beside the coverage card, and the
+     middle of the map is then off its coast (for France, in the Bay of Biscay). */
+  const z = map.getZoom(), c = map.getCenter(), R = regionAt(c.lng, c.lat) || (z < 7 ? boxRegion(c.lng, c.lat) : null), ours = !!R;
+  if (R && !flyingTo && !introRunning) setFocus(R);                // the cards beside the map follow the map
   const top = topZoomAt(c.lng, c.lat), zd = Math.min(tileZoom(), top), native = nativeAt(c.lng, c.lat);
   const step = zd <= 8 ? 0 : zd < top ? 1 : 2;
   $("#steps").classList.toggle("off", !ours && z >= 2.6);          // the three steps describe our maps: nothing to say elsewhere
   document.querySelectorAll("#steps span").forEach((s) => s.classList.toggle("on", ours && +s.dataset.step === step));
-  if (!fullRes()) document.querySelector('#steps span[data-step="2"]').textContent = native ? "Native 30 m" : `Finest here · ${finestRes()}`;
+  if (!fullRes()) document.querySelector('#steps span[data-step="2"]').textContent = native ? "Native 30 m" : `Finest here · ${finestRes(R || FOCUS)}`;
+  /* The ground size of a pixel on screen. At the native zoom a tile pixel may be a little smaller than the grid
+     the maps were made on (further north it is); the maps are no finer than that grid. */
+  const size = ours ? fmtRes(zd === top && native ? Math.max(groundRes(zd, c.lat), (R.cat.source || {}).res_m || 0) : groundRes(zd, c.lat)) : "";
   $("#roRes").textContent = z < 2.6 ? (TOUCH ? "Tap or pinch to zoom in" : "Click or scroll to zoom in")
-    : ours ? `${fmtRes(groundRes(zd, c.lat))} per pixel${zd === top ? (native ? " (native)" : " (finest here)") : (FINE.length && native && zd >= CAT.zoom.max ? " · zoom in for 30 m" : "")}`
+    : ours ? `${size} per pixel${zd === top ? (native ? " (native)" : " (finest here)") : (R.fine.length && native && zd >= R.zoom.max ? " · zoom in for 30 m" : "")}`
     : currentBg() ? `Background, ${fmt(BG.cell_km)} km cells` : "No ready-made maps here";
   updateNote();
 }
@@ -744,9 +941,9 @@ function onHover(e) {
   });
 }
 function onClick(e) {
-  const { lng, lat } = e.lngLat, z = map.getZoom();
+  const { lng, lat } = e.lngLat, z = map.getZoom(), R = regionAt(lng, lat);
   if (popup) { popup.remove(); popup = null; }
-  if (!inBounds(lng, lat)) {
+  if (!R) {
     /* Outside the region with maps a click moves in on the place, in two steps, as far as the background
        has anything to show. There the note at the top says what is published, and the next click offers
        to request the place. */
@@ -759,10 +956,10 @@ function onClick(e) {
   }
   /* A sample area of a reduced copy: a click on its square (or just beside it) far out, or inside its
      outline at the regional view, goes to the area itself. No spot is picked: the click was for the area. */
-  const area = z < 4.2 ? null : z < 8 ? fineNear(e.point) : z < FINE_ZOOM + 0.5 ? fineAreaAt(lng, lat) : null;      // below 4.2 the squares are not shown
+  const area = z < 4.2 ? null : z < 8 ? fineNear(e.point) : z < R.fineZoom + 0.5 ? fineAreaAt(lng, lat) : null;      // below 4.2 the squares are not shown
   if (area && z < 10.8) { goFine(area); return; }
-  if (z < 8) fly({ center: [lng, lat], zoom: zRegional(), duration: 1500 });
-  else if (nativeAt(lng, lat) && z < 10.8) fly({ center: [lng, lat], zoom: (CAT.zoom.native || CAT.zoom.max) - 0.3, duration: 1500 });      // on to the native grid, where the copy has it
+  if (z < 8) fly({ center: [lng, lat], zoom: zRegional(R), duration: 1500 });
+  else if (nativeAt(lng, lat) && z < 10.8) fly({ center: [lng, lat], zoom: nativeZoom(R) - 0.3, duration: 1500 });      // on to the native grid, where the copy has it
   pickLocation(lng, lat);
 }
 function demandPopup(lngLat) {
@@ -782,9 +979,9 @@ let noteShown = null, noteOff = null;
 const reviewClause = () => (CFG.paperStatus ? `While the paper is ${CFG.paperStatus}, ` : "");
 const capFirst = (s) => s.charAt(0).toUpperCase() + s.slice(1);
 function noteKind() {
-  const z = map.getZoom(), c = map.getCenter();
-  if (!inBounds(c.lng, c.lat)) return z >= outNoteZoom(c.lat) && onLand(c.lng, c.lat) ? "outside" : null;
-  return !fullRes() && z >= CAT.zoom.max - 0.4 && !fineAreaAt(c.lng, c.lat) ? "finest" : null;
+  const z = map.getZoom(), c = map.getCenter(), R = regionAt(c.lng, c.lat);
+  if (!R) return z >= outNoteZoom(c.lat) && onLand(c.lng, c.lat) ? "outside" : null;
+  return !regFull(R) && z >= R.zoom.max - 0.4 && !fineAreaAt(c.lng, c.lat) ? "finest" : null;
 }
 function updateNote(redraw) {
   const kind = noteKind(), box = $("#zoomNote");
@@ -794,52 +991,61 @@ function updateNote(redraw) {
   noteShown = show;
   box.hidden = !show;
   if (!show) return;
-  const home = () => $("#btnHome").click();
+  const c = map.getCenter();
   if (show === "outside") {
-    const bg = currentBg();
-    $("#znHead").textContent = "Only the Korean Peninsula has detailed maps for now";
+    const bg = currentBg(), many = REG.length > 1;
+    $("#znHead").textContent = `Only ${theRegions()} ${many ? "have" : "has"} detailed maps for now`;
     $("#znText").textContent = (bg ? `What you see here is the background layer (${BG.name}, about ${fmt(BG.cell_km)} km per cell), not Prithvi-OpenET-Tower. ` : "") +
-      capFirst(`${reviewClause()}ready-made maps are published for the Korean Peninsula only. Other regions are produced on request.`);
+      capFirst(`${reviewClause()}ready-made maps are published for ${theRegions()} only. Other regions are produced on request.`);
+    /* One button, to the nearest region. A button for each made the note a line taller, and it then covered
+       the "Request this area" button of the popup that a click on the place opens. */
     $("#znBtns").replaceChildren(
-      el("button", { class: "primary small", onclick: home }, "Go to the Korean Peninsula"),
-      el("button", { class: "ghost", onclick: () => { const c = map.getCenter(); prefillRequest(c.lng, c.lat); showTab("request"); } }, "Request this area"));
+      ...regionsByDistance(c.lng, c.lat).slice(0, 1).map((R) => el("button", { class: "primary small", onclick: () => goRegion(R) }, `Go to ${R.the}`)),
+      el("button", { class: "ghost", onclick: () => { const p = map.getCenter(); prefillRequest(p.lng, p.lat); showTab("request"); } }, "Request this area"));
   } else {
-    const n = FINE.length, c = map.getCenter();
-    $("#znHead").textContent = `${finestRes()} is the finest level here for now`;
+    const n = FINE.length, R = regionOr(c.lng, c.lat);
+    $("#znHead").textContent = `${finestRes(R)} is the finest level here for now`;
     $("#znText").textContent = n
       ? capFirst(`${reviewClause()}the native 30 m maps are shown only in ${fineWords()}. The full 30 m maps will be released after the paper is accepted.`)
-      : `This public preview stops at about ${finestRes()} per pixel. The 30 m maps will be released after the paper is accepted.`;
-    /* the nearest areas first; all of them are in the "Go to" list */
-    const near = [...FINE].sort((a, b) => Math.hypot((a.center[0] - c.lng) * Math.cos(c.lat * Math.PI / 180), a.center[1] - c.lat) -
-                                          Math.hypot((b.center[0] - c.lng) * Math.cos(c.lat * Math.PI / 180), b.center[1] - c.lat)).slice(0, 3);
-    $("#znBtns").replaceChildren(...near.map((a) => el("button", { class: "primary small", onclick: () => goFine(a) }, `${a.name} · 30 m`)));
+      : `This public preview stops at about ${finestRes(R)} per pixel. The 30 m maps will be released after the paper is accepted.`;
+    /* the nearest areas of this region first (all of them are in the "Go to" list); a region that has none
+       points to the nearest region that has */
+    const near = [...R.fine].sort((a, b) => Math.hypot((a.center[0] - c.lng) * Math.cos(c.lat * Math.PI / 180), a.center[1] - c.lat) -
+                                            Math.hypot((b.center[0] - c.lng) * Math.cos(c.lat * Math.PI / 180), b.center[1] - c.lat)).slice(0, 3);
+    const other = near.length ? null : regionsByDistance(c.lng, c.lat).find((k) => k.fine.length);
+    $("#znBtns").replaceChildren(...near.map((a) => el("button", { class: "primary small", onclick: () => goFine(a) }, `${a.name} · 30 m`)),
+      ...(other ? [el("button", { class: "primary small", onclick: () => goRegion(other) }, `30 m sample areas · ${other.name}`)] : []));
   }
 }
-/* "eight sample areas, around the paper's Korean flux-tower sites" — the catalog says what the areas are. */
-const fineWords = () => `${numWord(FINE.length)} sample area${FINE.length > 1 ? "s" : ""}${FINE_WHAT ? `, ${FINE_WHAT}` : ""}`;
+/* "eight sample areas, around the paper's Korean flux-tower sites" — the catalogs say what the areas are. */
+function fineWords() {
+  const what = [...new Set(REG.filter((R) => R.fine.length).map((R) => R.fineWhat).filter(Boolean))];
+  return `${numWord(FINE.length)} sample area${FINE.length > 1 ? "s" : ""}${what.length ? `, ${what.join(" and ")}` : ""}`;
+}
+let shownTiles = "", shownBg = "";      // what the two sources were last given: asking again for the same tiles would only make the map blink
 function syncBackground() {
   if (!map || !map.getLayer("ctx")) return;
-  const bg = currentBg();
-  if (bg) map.getSource("ctx").setTiles([bgTileURL(bg)]);
+  const bg = currentBg(), url = bg ? bgTileURL(bg) : "";
+  if (bg && url !== shownBg) { map.getSource("ctx").setTiles([url]); shownBg = url; }
   map.setLayoutProperty("ctx", "visibility", bg ? "visible" : "none");
 }
 function applyLayer() {
   buildLUT();
-  const src = map && map.getSource("et");
-  if (src) src.setTiles([tileURL()]);
+  const src = map && map.getSource("et"), url = tileURL();
+  if (src && url !== shownTiles) { src.setTiles([url]); shownTiles = url; }
   syncBackground();
   renderLayerCard(); renderLegend(); renderWhen(); renderCalendar();
-  if (!state.pick) renderPeninsulaSeries();
+  if (!state.pick) renderRegionSeries();
   if (map) { updateView(); updateNote(true); }                    // both name the background, which comes and goes with the layer
 }
 
 /* ───────────────────────────── layer controls ───────────────────────────── */
-function builtYears() { return [...new Set(CAT.months.filter((m) => m.tiles).map((m) => m.ym.slice(0, 4)))]; }
+function builtYears() { return [...new Set(builtMonths().map((ym) => ym.slice(0, 4)))]; }
 function renderWhen() {
   const box = $("#when"); box.replaceChildren();
   document.querySelectorAll("#modeSeg button").forEach((b) => {
     b.classList.toggle("on", b.dataset.mode === state.mode);
-    const ok = b.dataset.mode === "annual" ? L.has("clim_annual") : b.dataset.mode === "clim" ? (CAT.clim || []).length > 0 : builtYears().length > 0;
+    const ok = b.dataset.mode === "annual" ? LAYERS.has("clim_annual") : b.dataset.mode === "clim" ? climMonths().length > 0 : builtYears().length > 0;
     b.disabled = !ok;
   });
   if (state.mode === "annual") { box.append(el("span", { class: "sub" }, `Sum of the twelve monthly means, ${TRAIN_YEARS()}`)); return; }
@@ -847,13 +1053,13 @@ function renderWhen() {
   if (state.mode === "month") {
     const y = state.ym.slice(0, 4);
     const sel = el("select", { "aria-label": "Year", onchange: (e) => {
-      const have = CAT.months.filter((m) => m.tiles && m.ym.startsWith(e.target.value));
-      state.ym = (have.find((m) => m.ym.slice(5) === state.ym.slice(5)) || have[0]).ym; state.seriesYear = e.target.value; stopPlay(); applyLayer();
+      const have = builtMonths().filter((ym) => ym.startsWith(e.target.value));
+      state.ym = have.find((ym) => ym.slice(5) === state.ym.slice(5)) || have[0]; state.seriesYear = e.target.value; stopPlay(); applyLayer();
       if (state.pick) loadPickSeries();
     } }, builtYears().map((yy) => el("option", { value: yy, selected: yy === y }, yy)));
     box.append(sel);
-    avail = new Set(CAT.months.filter((m) => m.tiles && m.ym.startsWith(y)).map((m) => +m.ym.slice(5)));
-  } else avail = new Set(CAT.clim.map((c) => c.month));
+    avail = new Set(builtMonths().filter((ym) => ym.startsWith(y)).map((ym) => +ym.slice(5)));
+  } else avail = new Set(climMonths());
   const cur = state.mode === "month" ? +state.ym.slice(5) : state.climMonth;
   box.append(el("div", { class: "mon", role: "group", "aria-label": "Month" }, MON.map((name, i) =>
     el("button", { class: cur === i + 1 ? "on" : "", disabled: !avail.has(i + 1), title: MONL[i],
@@ -869,8 +1075,8 @@ function stopPlay() { if (state.playing) { clearInterval(state.playing); state.p
 function togglePlay() {
   if (state.playing) { stopPlay(); renderWhen(); return; }
   const months = state.mode === "month"
-    ? CAT.months.filter((m) => m.tiles && m.ym.startsWith(state.ym.slice(0, 4))).map((m) => +m.ym.slice(5))
-    : CAT.clim.map((c) => c.month);
+    ? builtMonths().filter((ym) => ym.startsWith(state.ym.slice(0, 4))).map((ym) => +ym.slice(5))
+    : climMonths();
   state.playing = setInterval(() => {
     const cur = state.mode === "month" ? +state.ym.slice(5) : state.climMonth;
     setMonth(months[(months.indexOf(cur) + 1) % months.length]);
@@ -891,20 +1097,22 @@ function renderLegend() {
   if (bg) note.textContent = `Rest of the globe: ${BG.name}${BG.period ? `, ${BG.period} mean` : ""}, about ${fmt(BG.cell_km)} km — a background layer, not this model.`;
   drawHist(ly, lo, hi);
 }
-/* Distribution of the layer's pixels along the same axis as the colour bar. The histogram lives in the
-   layer's sidecar .json (written by build_tiles.py) and is fetched only when the layer is shown. */
+/* Distribution of the layer's pixels in the region in focus, along the same axis as the colour bar. The
+   histogram lives in the layer's sidecar .json (written by build_tiles.py) and is fetched only when the layer
+   is shown. */
 const histCache = new Map();
 function layerHist(ly) {
-  if (!histCache.has(ly.id)) {
-    histCache.set(ly.id, fetch(fileURL(ly.file.replace(/\.pmtiles$/, ".json")))
+  if (!ly.url) return Promise.resolve(null);                    // the region in focus has no map of this layer
+  if (!histCache.has(ly.url)) {
+    histCache.set(ly.url, fetch(ly.url.replace(/\.pmtiles$/, ".json"))
       .then((r) => (r.ok ? r.json() : null)).then((j) => (j && j.hist_dn) || null).catch(() => null));
   }
-  return histCache.get(ly.id);
+  return histCache.get(ly.url);
 }
 async function drawHist(ly, lo, hi) {
   const c = $("#lgHist"), W = 240, H = 34, dpr = Math.min(2, devicePixelRatio || 1);
-  const hist = await layerHist(ly);
-  if (currentLayerId() !== ly.id) return;                       // a newer layer was selected meanwhile
+  const hist = await layerHist(ly), now = currentLayer();
+  if (now.id !== ly.id || now.url !== ly.url) return;           // a newer layer, or another region, was chosen meanwhile
   c.width = W * dpr; c.height = H * dpr;
   const g = c.getContext("2d"); g.scale(dpr, dpr); g.clearRect(0, 0, W, H);
   if (!hist) return;
@@ -916,10 +1124,12 @@ async function drawHist(ly, lo, hi) {
 }
 function renderLayerCard() {
   const ly = currentLayer();
+  $("#lyKicker").textContent = REG.length > 1 ? `On the map · ${FOCUS.name}` : "On the map";
   $("#lyTitle").textContent = ly.label;
   const flag = $("#lyFlag"); flag.hidden = true;
   let sub = "";
-  if (ly.kind === "annual") sub = `Sum of the twelve monthly means over ${TRAIN_YEARS()}. Gap-free wherever every calendar month was observed at least once.`;
+  if (ly.missing) sub = `There is no map of this layer for ${FOCUS.the}.`;
+  else if (ly.kind === "annual") sub = `Sum of the twelve monthly means over ${TRAIN_YEARS()}. Gap-free wherever every calendar month was observed at least once.`;
   else if (ly.kind === "clim") sub = `Mean of the ${MONL[ly.month - 1]} maps over ${TRAIN_YEARS()}, using the years in which the pixel was observed.`;
   else {
     const r = ly.rec;
@@ -929,10 +1139,10 @@ function renderLayerCard() {
   $("#lySub").textContent = sub;
   $("#lyMean").textContent = fmt(ly.mean);
   $("#lyUnit").textContent = ly.units;
-  $("#lyMeanL").textContent = ly.kind === "month" ? "Mean over observed land" : "Peninsula mean";
-  const cov = Math.min(100, ly.cover * 100);
+  $("#lyMeanL").textContent = ly.kind === "month" ? "Mean over observed land" : `${FOCUS.short} mean`;
+  const cov = ly.missing ? NaN : Math.min(100, ly.cover * 100);
   $("#lyCover").textContent = fmt(cov, cov < 99.5 ? 1 : 0);
-  $("#lyCoverBar").style.width = cov + "%";
+  $("#lyCoverBar").style.width = (cov || 0) + "%";
 }
 
 /* ───────────────────────────── chart (SVG) ───────────────────────────── */
@@ -1018,40 +1228,42 @@ function seriesCSV() {
   mdl.labels.forEach((lb, i) => rows.push([lb, ...mdl.series.map((s) => s.values[i] == null ? "" : s.values[i])].join(",")));
   return `# ${mdl.title}\n# ${mdl.note || ""}\n` + rows.join("\n") + "\n";
 }
-function yearSeriesFromCatalog(year) {
-  return MON.map((_, i) => { const r = CAT.months.find((m) => m.ym === `${year}-${String(i + 1).padStart(2, "0")}`); return r && r.tiles ? r.tiles.mean : null; });
+function yearSeriesFromCatalog(R, year) {
+  return MON.map((_, i) => { const r = R.months.find((m) => m.ym === `${year}-${String(i + 1).padStart(2, "0")}`); return r && r.tiles ? r.tiles.mean : null; });
 }
-function renderPeninsulaSeries() {
-  const y = state.seriesYear, clim = MON.map((_, i) => { const c = (CAT.clim || []).find((k) => k.month === i + 1); return c ? c.mean : null; });
+/* The seasonal cycle of the region in focus, from its catalog: the chosen year against the training-period mean. */
+function renderRegionSeries() {
+  const R = FOCUS, y = state.seriesYear, clim = MON.map((_, i) => { const c = (R.cat.clim || []).find((k) => k.month === i + 1); return c ? c.mean : null; });
   const series = [];
-  if (y) series.push({ name: y, short: y, color: "#2E7BA8", values: yearSeriesFromCatalog(y) });
+  if (y) series.push({ name: y, short: y, color: "#2E7BA8", values: yearSeriesFromCatalog(R, y) });
   series.push({ name: `${TRAIN_YEARS()} mean`, short: "mean", color: "#8C8A80", values: clim });
-  $("#srKicker").textContent = "Seasonal cycle"; $("#srTitle").textContent = "Peninsula mean"; $("#srReset").hidden = true;
+  $("#srKicker").textContent = "Seasonal cycle"; $("#srTitle").textContent = `${R.short} mean`; $("#srReset").hidden = true;
   $("#srSub").textContent = y ? `Monthly ET averaged over the land observed in each month of ${y}, against the ${TRAIN_YEARS()} mean. Cloudy months average fewer pixels.` : "";
-  drawChart({ title: "Peninsula mean monthly ET", labels: MON, units: "mm/month", digits: 1, series,
+  drawChart({ title: `${R.short} mean monthly ET`, labels: MON, units: "mm/month", digits: 1, series,
               note: "mean over land pixels with a clear-sky observation", tipHead: (i) => MONL[i] });
 }
 
 /* ───────────────────────────── pixel series ───────────────────────────── */
 function pickLocation(lng, lat) {
-  state.pick = { lng, lat };
+  state.pick = { lng, lat, region: regionOr(lng, lat) };
   recordModel = null; $("#recordBox").hidden = true;             // the previous pixel's record must not sit under the new title
   if (!pickMarker) pickMarker = new maplibregl.Marker({ color: "#B85434", scale: 0.75 });
   pickMarker.setLngLat([lng, lat]).addTo(map);
   loadPickSeries();
 }
 async function loadPickSeries() {
-  const { lng, lat } = state.pick, z = topZoomAt(lng, lat), t = lngLatToTile(lng, lat, z), y = state.seriesYear;
+  const { lng, lat, region: R } = state.pick, z = topZoomAt(lng, lat), t = lngLatToTile(lng, lat, z), y = state.seriesYear;
   const where = `${Math.abs(lat).toFixed(4)}°${lat >= 0 ? "N" : "S"}, ${Math.abs(lng).toFixed(4)}°${lng >= 0 ? "E" : "W"}`;
   $("#srKicker").textContent = cellNameAt(lng, lat); $("#srTitle").textContent = where; $("#srReset").hidden = false;
+  $("#srReset").textContent = `← ${FOCUS.short} mean`;
   $("#srSub").textContent = "Reading the monthly maps…";
   const ids = [...MON.map((_, i) => `et_${y}${String(i + 1).padStart(2, "0")}`), ...MON.map((_, i) => `clim_${String(i + 1).padStart(2, "0")}`), "clim_annual"];
   let vals;
   try {
     vals = await mapLimit(ids, 8, async (id) => {
-      if (!L.has(id)) return null;
+      if (!R.L.has(id)) return null;
       const dn = await getDN(id, z, t.x, t.y), d = dn ? dn[t.py * TILE + t.px] : 255;
-      return d === 255 ? null : d * L.get(id).dn_step;
+      return d === 255 ? null : d * R.L.get(id).dn_step;
     });
   } catch (e) { $("#srSub").textContent = "Could not read the tiles: " + e.message; return; }
   if (!state.pick || state.pick.lng !== lng || state.pick.lat !== lat) return;         // a newer click won
@@ -1067,7 +1279,7 @@ async function loadPickSeries() {
   $("#srSub").textContent = `${annual == null ? "" : `Mean annual ET ${fmt(annual)} mm/year (${TRAIN_YEARS()}). `}` +
     `${nObs} of 12 months of ${y} had a clear observation here.`;
   drawChart({ title: `Monthly ET at ${where}`, labels: MON, units: "mm/month", tipHead: (i) => `${MONL[i]}`,
-    note: (nativeAt(lng, lat) ? "browse-tile values" : `means over a ${finestRes()} cell of the public preview tiles`) + ", rounded to 1 mm/month; use the GeoTIFFs for analysis",
+    note: (nativeAt(lng, lat) ? "browse-tile values" : `means over a ${finestRes(R)} cell of the public preview tiles`) + ", rounded to 1 mm/month; use the GeoTIFFs for analysis",
     series: [{ name: y, short: y, color: "#2E7BA8", values: yr }, { name: `${TRAIN_YEARS()} mean`, short: "mean", color: "#8C8A80", values: clim }] });
   if (!recordModel || recordModel.pick !== state.pick) loadPickRecord(where);      // a year change keeps the record already read
 }
@@ -1077,7 +1289,7 @@ async function loadPickSeries() {
    once each archive's directory is cached. Missing months (cloud, or never produced) stay gaps. */
 let recordModel = null;
 async function loadPickRecord(where) {
-  const mine = state.pick, { lng, lat } = mine, months = CAT.months.filter((m) => m.tiles);
+  const mine = state.pick, { lng, lat } = mine, months = mine.region.months.filter((m) => m.tiles);
   const z = topZoomAt(lng, lat), t = lngLatToTile(lng, lat, z);
   recordModel = null;
   $("#recordBox").hidden = false;
@@ -1103,8 +1315,9 @@ async function loadPickRecord(where) {
 function drawRecord() {
   const R = recordModel, box = $("#chartRecord"); box.replaceChildren();
   if (!R) return;
+  const REC = R.pick.region.record;                               // the record of the region the spot is in
   const ymIdx = (ym) => +ym.slice(0, 4) * 12 + (+ym.slice(5) - 1);
-  const i0 = ymIdx(CAT.record.first), N = ymIdx(CAT.record.last) - i0 + 1;
+  const i0 = ymIdx(REC.first), N = ymIdx(REC.last) - i0 + 1;
   const byIdx = new Array(N).fill(undefined);                     // undefined = no map for that month, null = no clear observation
   R.months.forEach((m, k) => { byIdx[ymIdx(m.ym) - i0] = { m, v: R.vals[k] }; });
   const all = R.vals.filter((v) => v != null);
@@ -1113,8 +1326,8 @@ function drawRecord() {
   const yMax = niceCeil(Math.max(...all) * 1.04);
   const X = (i) => mg.l + pw * i / (N - 1), Y = (v) => mg.t + ph * (1 - v / yMax);
   const svg = svgEl("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", tabindex: "0",
-    "aria-label": `Monthly ET at ${R.where}, ${ymLabel(CAT.record.first)} to ${ymLabel(CAT.record.last)}, mm/month. Use the table below for values.` });
-  const t0 = ymIdx(CAT.record.train[0]) - i0, t1 = ymIdx(CAT.record.train[1]) - i0;
+    "aria-label": `Monthly ET at ${R.where}, ${ymLabel(REC.first)} to ${ymLabel(REC.last)}, mm/month. Use the table below for values.` });
+  const t0 = ymIdx(REC.train[0]) - i0, t1 = ymIdx(REC.train[1]) - i0;
   if (t0 > 0) svg.append(svgEl("rect", { class: "band", x: X(0), y: mg.t, width: X(t0) - X(0), height: ph }));
   if (t1 < N - 1) svg.append(svgEl("rect", { class: "band", x: X(t1), y: mg.t, width: X(N - 1) - X(t1), height: ph }));
   for (let k = 0; k <= 2; k++) {
@@ -1175,9 +1388,10 @@ function drawRecord() {
 function recordCSV() {
   const R = recordModel; if (!R) return "";
   const { lng, lat } = R.pick;
-  return [`# Prithvi-OpenET-Tower monthly ET at ${lat.toFixed(5)}N ${lng.toFixed(5)}E (${cellNameAt(lng, lat)}), data version ${CAT.version}`,
+  return [`# Prithvi-OpenET-Tower monthly ET at ${Math.abs(lat).toFixed(5)}${lat >= 0 ? "N" : "S"} ${Math.abs(lng).toFixed(5)}${lng >= 0 ? "E" : "W"} (${cellNameAt(lng, lat)}), ` +
+      `${REG.length > 1 ? `${R.pick.region.name}, ` : ""}data version ${R.pick.region.version}`,
     "# Browse-tile values rounded to 1 mm/month and resampled to Web Mercator. Use the GeoTIFFs for analysis." +
-      (nativeAt(lng, lat) ? "" : ` This public copy of the tiles stops at about ${finestRes()} per pixel: each value is the mean over such a cell.`),
+      (nativeAt(lng, lat) ? "" : ` This public copy of the tiles stops at about ${finestRes(R.pick.region)} per pixel: each value is the mean over such a cell.`),
     "# Empty et_mm_per_month = no clear-sky observation that month. period: train = within the model's training years.",
     "month,et_mm_per_month,period,sensors",
     ...R.months.map((m, k) => [m.ym, R.vals[k] == null ? "" : R.vals[k], m.period, m.sensors].join(","))].join("\n") + "\n";
@@ -1187,17 +1401,18 @@ function recordCSV() {
 function renderCalendar() {
   const box = $("#cal"); box.replaceChildren(el("span"));
   MON.forEach((mn) => box.append(el("span", { class: "cal-h" }, mn[0])));
-  const y0 = +CAT.record.first.slice(0, 4), y1 = +CAT.record.last.slice(0, 4), byYm = new Map(CAT.months.map((m) => [m.ym, m]));
+  const REC = FOCUS.record;                                       // the record of the region in focus
+  const y0 = +REC.first.slice(0, 4), y1 = +REC.last.slice(0, 4), byYm = new Map(FOCUS.months.map((m) => [m.ym, m]));
   const cls = (c) => COVER_STEPS[clamp(Math.floor(c * 5), 0, 4)];
   for (let y = y0; y <= y1; y++) {
-    const train = `${y}-01` >= CAT.record.train[0] && `${y}-12` <= CAT.record.train[1];
+    const train = `${y}-01` >= REC.train[0] && `${y}-12` <= REC.train[1];
     box.append(el("span", { class: "cal-y" + (train ? " train" : "") }, String(y)));
     for (let mo = 1; mo <= 12; mo++) {
       const ym = `${y}-${String(mo).padStart(2, "0")}`, r = byYm.get(ym);
       let node, lines;
       if (!r) {
         node = el("span", { class: "cal-c none" });
-        lines = [ymLabel(ym), ym < CAT.record.first || ym > CAT.record.last ? "outside the record" : "not produced — an input was unavailable"];
+        lines = [ymLabel(ym), ym < REC.first || ym > REC.last ? "outside the record" : "not produced — an input was unavailable"];
       } else if (r.tiles) {
         node = el("button", { class: "cal-c built" + (state.mode === "month" && state.ym === ym ? " sel" : ""), style: `background:${cls(r.tiles.cover)}`,
           "aria-label": `${ymLabel(ym)}, ${Math.round(r.tiles.cover * 100)}% of land observed`,
@@ -1215,33 +1430,49 @@ function renderCalendar() {
       box.append(node);
     }
   }
-  const nBuilt = CAT.record.with_tiles;
-  $("#calSub").textContent = `${CAT.record.n} monthly GeoTIFFs from ${ymLabel(CAT.record.first)} to ${ymLabel(CAT.record.last)}. ` +
-    (nBuilt < CAT.record.n ? `Map tiles exist for ${nBuilt} of them in this prototype. ` : "") + `Bold years are the model's training period.`;
+  const nBuilt = REC.with_tiles;
+  $("#calSub").textContent = `${REC.n} monthly GeoTIFFs${REG.length > 1 ? ` of ${FOCUS.the}` : ""} from ${ymLabel(REC.first)} to ${ymLabel(REC.last)}. ` +
+    (nBuilt < REC.n ? `Map tiles exist for ${nBuilt} of them in this prototype. ` : "") + `Bold years are the model's training period.`;
   $("#calLegend").replaceChildren(
     el("span", {}, ["Land observed: ", ...COVER_STEPS.map((c) => el("i", { style: `background:${c}` })), " 0 → 100%"]),
-    nBuilt < CAT.record.n ? el("span", {}, [el("i", { style: "box-shadow:inset 0 0 0 1px #D9D5C7;background:#FAF9F5" }), "tiles not built yet"]) : "",
+    nBuilt < REC.n ? el("span", {}, [el("i", { style: "box-shadow:inset 0 0 0 1px #D9D5C7;background:#FAF9F5" }), "tiles not built yet"]) : "",
     el("span", {}, [el("i", { style: "background:radial-gradient(circle,#D9D5C7 1.5px,transparent 2px)" }), "no map"]));
 }
 
 /* ───────────────────────────── download + code ───────────────────────────── */
-const fileAddress = (rel) => (CFG.cogBase ? CFG.cogBase.replace(/\/$/, "") + "/" + rel : CFG.nasPath ? CFG.nasPath.replace(/\/$/, "") + "/" + rel : rel);
+/* Where a region's GeoTIFFs are: a public address (cogBase in js/config.js — one address for the first region,
+   or one per region id), or on the lab's internal copy the storage path its page was given (nas, nas_<id>). */
+const cogOf = (R) => (CFG.cogBase && typeof CFG.cogBase === "object" ? CFG.cogBase[R.id] || "" : R === REG[0] ? CFG.cogBase : "").replace(/\/$/, "");
+const nasOf = (R) => (R === REG[0] ? CFG.nasPath : CFG.nasMore[R.id] || "").replace(/\/$/, "");
+const fileAddress = (R, rel) => (cogOf(R) ? cogOf(R) + "/" + rel : nasOf(R) ? nasOf(R) + "/" + rel : rel);
+/* The grid of a region's GeoTIFFs in words, from its catalog: "EPSG:5179 (Korea 2000 / Unified CS), 30 m, 22,403 × 36,677 pixels". */
+function gridWords(R) {
+  const s = R.cat.source || {};
+  return s.epsg && s.width ? `EPSG:${s.epsg}${s.crs ? ` (${s.crs})` : ""}, ${fmt(s.res_m)} m, ${fmt(s.width)} × ${fmt(s.height)} pixels`
+    : R === REG[0] ? "" : s.grid || "";      // a catalog from before the grid was read from the files: for the first region the page's own words stand
+}
+const epsgOf = (R) => { const s = R.cat.source || {}; return s.epsg || +(/EPSG:(\d+)/.exec(s.grid || "") || [])[1] || 0; };
+/* The Download tab lists the files of one region: the one in focus, which its own list can change. */
 function renderDownload() {
+  const R = FOCUS, cog = cogOf(R), nas = nasOf(R);
   const notice = $("#dlNotice"); notice.replaceChildren();
-  if (CFG.cogBase) notice.append("Files download directly from the links below.");
+  if (cog) notice.append("Files download directly from the links below.");
   else {
     notice.append(el("b", {}, "Public download links are not open yet. "), "They will be added here after the paper is accepted.");
-    if (CFG.nasPath) notice.append(el("br"), "Lab members: the files are on the lab storage under ", el("code", {}, CFG.nasPath + "/et_30m/"), ".");
+    if (nas) notice.append(el("br"), "Lab members: the files are on the lab storage under ", el("code", {}, nas + "/et_30m/"), ".");
   }
-  const years = [...new Set(CAT.months.map((m) => m.ym.slice(0, 4)))], sel = $("#dlYear");
+  $("#dlLead").textContent = `One Cloud-Optimized GeoTIFF per month${REG.length > 1 ? " and region" : ""}. Each file holds the whole of ${R.the} at 30 m and can be read in part over HTTP, so you rarely need the full archive.`;
+  const grid = gridWords(R);
+  if (grid) $("#dlGrid").textContent = grid;
+  const years = [...new Set(R.months.map((m) => m.ym.slice(0, 4)))], sel = $("#dlYear");
   sel.replaceChildren(el("option", { value: "" }, "All years"), ...years.map((y) => el("option", { value: y }, y)));
   const body = $("#dlTable tbody");
   const draw = () => {
-    const rows = CAT.months.filter((m) => !sel.value || m.ym.startsWith(sel.value));
+    const rows = R.months.filter((m) => !sel.value || m.ym.startsWith(sel.value));
     body.replaceChildren(...rows.map((m) => {
       const name = m.cog.split("/").pop();
       return el("tr", {}, [el("td", {}, ymLabel(m.ym)),
-        el("td", { class: "mono" }, CFG.cogBase ? el("a", { href: fileAddress(m.cog) }, name) : name),
+        el("td", { class: "mono" }, cog ? el("a", { href: fileAddress(R, m.cog) }, name) : name),
         el("td", { class: "num" }, fmtBytes(m.cog_bytes)),
         el("td", {}, el("span", { class: "pill" + (m.period === "train" ? "" : " ex") }, m.period === "train" ? "training period" : "extrapolated")),
         el("td", {}, m.sensors === "L30" ? "Landsat" : "Landsat + Sentinel-2"),
@@ -1251,19 +1482,23 @@ function renderDownload() {
     $("#dlTotal").textContent = `${rows.length} files · ${fmtBytes(rows.reduce((a, m) => a + m.cog_bytes, 0))}`;
   };
   sel.onchange = draw; draw();
-  const picked = () => CAT.months.filter((m) => !sel.value || m.ym.startsWith(sel.value));
-  $("#dlCopy").onclick = (e) => copyText(picked().map((m) => fileAddress(m.cog)).join("\n"), e.currentTarget);
+  const picked = () => R.months.filter((m) => !sel.value || m.ym.startsWith(sel.value));
+  $("#dlCopy").onclick = (e) => copyText(picked().map((m) => fileAddress(R, m.cog)).join("\n"), e.currentTarget);
   $("#dlSums").onclick = () => download("SHA256SUMS.txt", picked().filter((m) => m.sha256).map((m) => `${m.sha256}  ${m.cog}`).join("\n") + "\n", "text/plain");
 }
+/* The examples of the Code tab are written for one region: the one in focus, which its own list can change. */
 function renderCode() {
-  const base = CFG.cogBase ? CFG.cogBase.replace(/\/$/, "") : CFG.nasPath ? CFG.nasPath.replace(/\/$/, "") : "https://<address announced at publication>";
+  const R = FOCUS, base = cogOf(R) || nasOf(R) || "https://<address announced at publication>";
+  const stem = R.months[0].cog.split("/").pop().replace(/\d{6}\.tif$/, "");      // how the region's files are named: "KP_ET30m_"
+  const ex = EXAMPLES[R.id] || { box: [midLon(R) - 0.15, midLat(R) - 0.1, midLon(R) + 0.15, midLat(R) + 0.1], boxName: `in ${R.the}`, point: [midLon(R), midLat(R)] };
+  const two = (v) => v.toFixed(2), epsg = epsgOf(R);
   $("#codePy").textContent =
 `import rasterio
 from rasterio.warp import transform_bounds
 from rasterio.windows import from_bounds
 
-src_path = "${base}/et_30m/2021/KP_ET30m_202107.tif"        # July 2021
-west, south, east, north = 127.15, 38.10, 127.45, 38.30      # lon/lat box: the Cheorwon plain
+src_path = "${base}/et_30m/2021/${stem}202107.tif"        # July 2021
+west, south, east, north = ${ex.box.map(two).join(", ")}      # lon/lat box: ${ex.boxName}
 
 with rasterio.open(src_path) as src:
     box = transform_bounds("EPSG:4326", src.crs, west, south, east, north)
@@ -1276,13 +1511,13 @@ with rasterio.open(src_path) as src:
 from rasterio.warp import transform
 
 base = "${base}/et_30m"
-lon, lat = 127.28, 38.20
+lon, lat = ${ex.point.map(two).join(", ")}
 months = [f"{y}{m:02d}" for y in range(2016, 2025) for m in range(1, 13)]
 
 xy, series = None, {}
 for ym in months:
-    with rasterio.open(f"{base}/{ym[:4]}/KP_ET30m_{ym}.tif") as src:
-        if xy is None:                                        # the grid is EPSG:5179, not lon/lat
+    with rasterio.open(f"{base}/{ym[:4]}/${stem}{ym}.tif") as src:
+        if xy is None:                                        # the grid is ${epsg ? `EPSG:${epsg}` : "a projected one"}, not lon/lat
             xs, ys = transform("EPSG:4326", src.crs, [lon], [lat])
             xy = (xs[0], ys[0])
         v = next(src.sample([xy], indexes=1))[0]
@@ -1307,7 +1542,7 @@ function boxInfo() {
 function updateArea() {
   const b = boxInfo(), out = $("#rqArea");
   out.textContent = b ? `About ${fmt(b.km2 < 100 ? b.km2 : Math.round(b.km2 / 100) * 100)} km² — roughly ${fmt(b.tiles)} HLS tile${b.tiles > 1 ? "s" : ""}, ${fmt(Math.round(b.km2 / 0.0009 / 1e6))} million 30 m pixels per month.`
-    : "Longitude and latitude in degrees. Tip: on the map, zoom in on a place outside Korea and choose “Request this area”.";
+    : "Longitude and latitude in degrees. Tip: on the map, zoom in on a place that has no ready-made maps and choose “Request this area”.";
 }
 function requestText() {
   const b = boxInfo(), v = (k) => fld(k).value.trim();
@@ -1337,7 +1572,7 @@ function initRequest() {
   const win = demandWindow(), f = $("#rqForm");
   $("#rqLead").textContent = "Prithvi-OpenET-Tower runs on inputs that exist worldwide, so the same 30 m monthly ET can be produced for other regions. Tell us where and when.";
   $("#rqWindow").textContent = `Any month from ${win.text} — the most recent months wait for the input data to arrive.`;
-  $("#abDemand").textContent = `Only the Korean Peninsula is ready to browse and download. For any other land area covered by HLS, we produce the maps on request for any month from ${win.text}. Use the “Request a region” tab.`;
+  $("#abDemand").textContent = `Only ${theRegions()} ${REG.length > 1 ? "are" : "is"} ready to browse and download. For any other land area covered by HLS, we produce the maps on request for any month from ${win.text}. Use the “Request a region” tab.`;
   /* Two ways out. With a request endpoint (the Worker in worker/) the form is posted and arrives as an
      email; without one the page can only open a draft in the visitor's own mail program. */
   const viaEndpoint = /^https:\/\/|^http:\/\/(127\.0\.0\.1|localhost)[:/]/.test(CFG.requestEndpoint);
@@ -1394,7 +1629,7 @@ function showTab(name) {
   document.querySelectorAll(".tabpane").forEach((p) => { const on = p.id === "tab-" + name; p.hidden = !on; p.classList.toggle("on", on); });
   if (name === "explore" && map) {
     map.resize();
-    if (fitWhenShown) { fitWhenShown = false; fitRegion(0); }
+    if (fitWhenShown) { const R = fitWhenShown; fitWhenShown = null; fitRegion(R, 0); }
     else if (openedHidden) { map.stop(); map.jumpTo(globeView()); }      // the globe was sized before its box had a size
     openedHidden = false;
   }
@@ -1416,16 +1651,42 @@ function wire() {
     if (map.getLayer("ctx")) map.setPaintProperty("ctx", "raster-opacity", ctxOpacity(e.target.value / 100));
   });
   $("#znClose").onclick = () => { noteOff = noteShown; updateNote(); };
-  $("#jump").append(el("optgroup", { label: "Cities", id: "jumpCities" }, CITIES.map(([name], i) => el("option", { value: i }, name))));
-  $("#jump").onchange = (e) => {                                   // regional view around the city, or a sample area; the list snaps back to its prompt
-    const v = e.target.value, area = v.startsWith("fine:") ? FINE.find((a) => a.id === v.slice(5)) : null, c = area ? null : CITIES[+v];
-    if (area) goFine(area);
-    else if (v !== "" && c) fly({ center: [c[1], c[2]], zoom: zRegional(), duration: 1600 });
+  /* The "Go to" list: the regions (when there are several), the sample areas of a reduced copy, and our place
+     names region by region. The list snaps back to its prompt once a choice is made. */
+  const many = REG.length > 1, spots = places(), jump = $("#jump");
+  if (many) jump.append(el("optgroup", { label: "Regions" }, REG.map((R) => el("option", { value: "region:" + R.id }, R.name))));
+  if (FINE.length) jump.append(el("optgroup", { label: "30 m areas" }, FINE.map((a, i) => el("option", { value: "fine:" + i }, a.name))));
+  for (const R of REG) {
+    const own = spots.map((p, i) => [p, i]).filter(([p]) => p.region === R);
+    if (own.length) jump.append(el("optgroup", { label: many ? `Cities · ${R.name}` : "Cities" }, own.map(([p, i]) => el("option", { value: "city:" + i }, p.name))));
+  }
+  if (many || FINE.length) { jump.options[0].textContent = "Go to…"; jump.setAttribute("aria-label", `Go to a ${many ? "region, a " : ""}${FINE.length ? "30 m area or a " : ""}city`); }
+  jump.onchange = (e) => {
+    const [kind, k] = e.target.value.split(":"), p = spots[+k];
+    if (kind === "region") goRegion(REG.find((R) => R.id === k));
+    else if (kind === "fine") goFine(FINE[+k]);
+    else if (kind === "city" && p) fly({ center: [p.lng, p.lat], zoom: zRegional(p.region), duration: 1600 });      // regional view around the city
     e.target.value = "";
   };
-  $("#btnHome").onclick = () => fitRegion(1400);
+  /* A button over the map for every region (the first one's is in the page already), the same choice above the
+     cards beside the map, and in the lists of the Download and Code tabs. */
+  const home = $("#btnHome");
+  home.textContent = REG[0].short; home.title = `Fit ${REG[0].the}`; home.classList.add("region-btn");
+  home.onclick = () => goRegion(REG[0]);
+  REG.slice(1).reduce((after, R) => { const b = el("button", { class: "mbtn region-btn more-region", title: `Fit ${R.the}`, onclick: () => goRegion(R) }, R.short); after.after(b); return b; }, home);
+  if (many) {
+    document.documentElement.classList.add("multi");
+    $("#regionSeg").replaceChildren(...REG.map((R) => el("button", { "data-region": R.id, title: `The cards describe ${R.the}; the map goes there`, onclick: () => goRegion(R) }, R.name)));
+    $("#regionBar").hidden = false;
+    for (const q of ["#dlRegion", "#codeRegion"]) {
+      const s = $(q);
+      s.replaceChildren(...REG.map((R) => el("option", { value: R.id }, R.name)));
+      s.onchange = () => setFocus(REG.find((R) => R.id === s.value));      // the lists and the examples only: the map stays where it is
+      s.closest("[hidden]").hidden = false;
+    }
+  }
   $("#btnGlobe").onclick = () => map.flyTo({ ...globeView(), duration: 1800 });
-  $("#srReset").onclick = () => { state.pick = null; recordModel = null; $("#recordBox").hidden = true; if (pickMarker) pickMarker.remove(); renderPeninsulaSeries(); };
+  $("#srReset").onclick = () => { clearPick(); renderRegionSeries(); };
   $("#rcTableBtn").onclick = (e) => { const t = $("#rcTable"); t.hidden = !t.hidden; e.currentTarget.textContent = t.hidden ? "Show table" : "Hide table"; e.currentTarget.setAttribute("aria-expanded", String(!t.hidden)); sendHeight(); };
   $("#rcCsv").onclick = () => download("prithvi_openet_pixel_record.csv", recordCSV(), "text/csv");
   $("#srTableBtn").onclick = (e) => { const t = $("#srTable"); t.hidden = !t.hidden; e.currentTarget.textContent = t.hidden ? "Show table" : "Hide table"; e.currentTarget.setAttribute("aria-expanded", String(!t.hidden)); sendHeight(); };
@@ -1444,21 +1705,44 @@ function wire() {
 /* Wording for a reduced copy of the tiles (see fullRes). The page's own text describes the full set;
    this replaces every sentence that would promise more than the tiles on hand can show. */
 function applyPreviewWording() {
-  const fine = finestRes(), n = FINE.length, list = FINE.map((a) => a.name), names = n > 1 ? `${list.slice(0, -1).join(", ")} and ${list[n - 1]}` : list.join("");
-  const areas = `${numWord(n)} small area${n > 1 ? "s" : ""}${FINE_WHAT ? ` ${FINE_WHAT}` : ""}`;      // "eight small areas around the paper's Korean flux-tower sites"
-  document.querySelector('#steps span[data-step="2"]').textContent = `Finest here · ${fine}`;
-  $("#hint").textContent = `Click the Korean Peninsula: the map zooms in to about ${fine} per pixel, the finest level of this public preview, and the panel on the right shows the monthly series at that spot.` +
+  const fine = finestAll(), n = FINE.length, names = wordList(FINE.map((a) => a.name));
+  const what = [...new Set(REG.filter((R) => R.fine.length).map((R) => R.fineWhat).filter(Boolean))];
+  const areas = `${numWord(n)} small area${n > 1 ? "s" : ""}${what.length ? ` ${what.join(" and ")}` : ""}`;      // "eight small areas around the paper's Korean flux-tower sites"
+  const low = REG.filter((R) => !regFull(R)), one = low.length === 1;      // the regions whose copy is a reduced one
+  document.querySelector('#steps span[data-step="2"]').textContent = `Finest here · ${finestRes(FOCUS)}`;
+  $("#hint").textContent = `Click ${theRegions("or")}: the map zooms in to about ${fine} per pixel, the finest level of this public preview, and the panel on the right shows the monthly series at that spot.` +
     (n ? ` ${capFirst(areas)} ${n > 1 ? "go" : "goes"} on to the native 30 m; ${n > 1 ? "they are" : "it is"} outlined on the map and listed under “Go to”.` : "") +
     " The 30 m maps themselves are the GeoTIFFs.";
   $("#rcHead").textContent = "Full record at this spot";
-  $("#tilesZoom").textContent = `zoom ${CAT.zoom.min}–${CAT.zoom.max} on this public copy, about ${fine} per pixel at best` +
-    (n ? `, plus zoom ${FINE_ZOOM} (30 m) inside ${numWord(n)} small area${n > 1 ? "s" : ""}` : "") + `; the full set goes to zoom ${CAT.zoom.native}, 30 m`;
+  $("#tilesZoom").textContent = `zoom ${low[0].zoom.min}–${low[0].zoom.max} on this public copy, about ${fine} per pixel at best` +
+    (n ? `, plus zoom ${Math.max(...REG.map((R) => R.fineZoom))} (30 m) inside ${numWord(n)} small area${n > 1 ? "s" : ""}` : "") + `; the full set goes to zoom ${nativeZoom(low[0])}, 30 m`;
   const badge = $("#previewBadge");
   badge.textContent = n ? `Public preview · ${fine}, and 30 m in ${numWord(n)} area${n > 1 ? "s" : ""}` : `Public preview · maps shown down to ${fine}`; badge.hidden = false;
   const li = $("#abPreview");
-  li.replaceChildren(el("b", {}, "This site shows a reduced copy."), ` The maps on this page stop at about ${fine} per pixel, and a value read at a clicked spot is the mean over a ${fine} cell.` +
+  li.replaceChildren(el("b", {}, "This site shows a reduced copy."), ` The maps on this page stop at about ${fine} per pixel` +
+    (one ? "" : ` (${wordList(low.map((R) => `${finestRes(R)} in ${R.the}`))})`) + `, and a value read at a clicked spot is the mean over ${one ? `a ${fine} cell` : "one such cell"}.` +
     (n ? ` ${capFirst(areas)} (${names}) ${n > 1 ? "keep" : "keeps"} the native 30 m.` : "") + " The 30 m maps are the GeoTIFFs.");
   li.hidden = false;
+}
+/* What the page says about its regions: their names wherever the page lists what is ready, and the parts of
+   its text that are about one region only, which show when that region is there. */
+function applyRegionWording() {
+  const many = REG.length > 1, names = REG.map((R) => R.name);
+  $("#factRegions").textContent = names.join(" · ");
+  $("#covRegions").textContent = names.join(", ");
+  $("#covMap").alt = `World map. ${regionNames()} ${many ? "are" : "is"} coloured and ringed; all other land is grey.`;
+  $("#abRegions").textContent = theRegions();
+  $("#glCoverage").textContent = `${regionNames()}; other regions on request`;
+  for (const n of document.querySelectorAll("[data-for-region]")) n.hidden = !REG.some((R) => R.id === n.dataset.forRegion);
+  if (fullRes() && (many || REG[0].id !== "kp")) $("#hint").textContent = `Click ${theRegions("or")}: the map zooms in two steps, from the coarse overview to a regional view (about ${resRange(REG.map((R) => groundRes(10, midLat(R))))} per pixel) and then to the native 30 m, and the panel on the right shows the monthly series at that pixel.`;
+}
+/* Everything outside the cards that follows the region in focus: the choice above the cards, the lists of the
+   Download and Code tabs and what those tabs show. (The cards themselves are applyLayer's.) */
+function renderRegionUI() {
+  document.querySelectorAll("#regionSeg button").forEach((b) => { const on = b.dataset.region === FOCUS.id; b.classList.toggle("on", on); b.setAttribute("aria-pressed", String(on)); });
+  for (const q of ["#dlRegion", "#codeRegion"]) $(q).value = FOCUS.id;
+  $("#srReset").textContent = `← ${FOCUS.short} mean`;
+  renderDownload(); renderCode();
 }
 /* A line at the very top of the page: where the paper stands and when the data will be released
    (js/config.js `notice`). Empty it at publication and the line is gone. */
@@ -1472,7 +1756,7 @@ function applyBackgroundWording() {
   const only = Object.keys(BG.layers).length === 1 && BG.layers.annual;
   const li = $("#abBg");
   li.replaceChildren(el("b", {}, "The rest of the globe is a background layer."),
-    ` Outside the Korean Peninsula the map shows ${BG.long || BG.name}${BG.period ? `, the ${BG.period} mean` : ""}${BG.grid ? ` on a ${BG.grid} grid` : ""} (about ${fmt(BG.cell_km)} km).` +
+    ` Outside ${theRegions()} the map shows ${BG.long || BG.name}${BG.period ? `, the ${BG.period} mean` : ""}${BG.grid ? ` on a ${BG.grid} grid` : ""} (about ${fmt(BG.cell_km)} km).` +
     " It is a different product, there to give the globe its context: Prithvi-OpenET-Tower has not been run for those places, and no value from the background is part of this dataset." +
     (only ? " It is shown with the annual-mean layer only." : ""));
   li.hidden = false;
@@ -1485,18 +1769,21 @@ async function main() {
     $("#bootMsg").textContent = e.message; document.querySelector(".boot-mark").style.display = "none";
     return;
   }
-  const first = ymLabel(CAT.record.first), last = ymLabel(CAT.record.last);
-  $("#factRecord").textContent = `${MON[+CAT.record.first.slice(5) - 1]} ${CAT.record.first.slice(0, 4)} – ${MON[+CAT.record.last.slice(5) - 1]} ${CAT.record.last.slice(0, 4)}`;
+  /* the record as the page's header gives it: from the earliest first month to the latest last month of the regions */
+  const r0 = REG.map((R) => R.record.first).sort()[0], r1 = REG.map((R) => R.record.last).sort().pop();
+  const first = ymLabel(r0), last = ymLabel(r1);
+  $("#factRecord").textContent = `${MON[+r0.slice(5) - 1]} ${r0.slice(0, 4)} – ${MON[+r1.slice(5) - 1]} ${r1.slice(0, 4)}`;
   $("#abRecord").textContent = `${first} to ${last}`;
   $("#glRecord").textContent = `${first} – ${last}`;
   $("#abMail").textContent = CFG.requestEmail; $("#abMail").href = "mailto:" + CFG.requestEmail;
-  $("#footVer").textContent = `Data version ${CAT.version}`;
+  $("#footVer").textContent = REG.length > 1 ? `Data versions: ${REG.map((R) => `${R.name} ${R.version}`).join(" · ")}` : `Data version ${CAT.version}`;
+  applyRegionWording();
   if (CFG.paperStatus) $("#abPaper").textContent = `Manuscript ${CFG.paperStatus}.`;
   if (CFG.notice && !CFG.nasPath) applyNotice();                   // not on the lab's internal copy, which is no preview and says so itself
   if (!fullRes()) applyPreviewWording();
   if (BG) applyBackgroundWording();
-  wire(); initRequest(); renderDownload(); renderCode();
-  renderLayerCard(); renderLegend(); renderWhen(); renderCalendar(); renderPeninsulaSeries();
+  wire(); initRequest(); renderRegionUI();
+  renderLayerCard(); renderLegend(); renderWhen(); renderCalendar(); renderRegionSeries();
   if (!webglWorks()) noMap(true, "the browser gives no WebGL context");
   else { try { initMap(); } catch (e) { noMap(true, e.message); } }
   const tab = Q.get("tab"); if (tab && document.getElementById("tab-" + tab)) showTab(tab);

@@ -12,7 +12,11 @@ It adapts to the tiles it finds:
   - a reduced copy with sample areas (catalog "fine"): those areas go on to 30 m and hold the full
     set's numbers; outside their outlines nothing is finer than the copy;
   - a background layer (catalog "background"): the rest of the globe carries another product, and
-    every value read from it is shown under that product's name.
+    every value read from it is shown under that product's name;
+  - several regions (the first catalog lists others under "regions"): the globe rests where each has
+    its mark in sight, each region can be gone to and has its own numbers beside the map, its own
+    file list and code examples, and a place inside a region's bounding box that has no map is
+    treated as outside.
 
 Checks that the page boots without console errors and opens on the whole globe — turning into place
 once, sized to the map box, on a phone too — that tiles decode to
@@ -138,9 +142,14 @@ with sync_playwright() as pw:
           f"the page rests on the whole globe and stays there (zoom {g0['zoom']:.2f}, globe {g0['D']:.0f} px in a {g0['w']} x {g0['h']} map; readout: {info['res']})")
     zm = page.evaluate("window.__portal.zoom")
     preview = zm["max"] < zm.get("native", zm["max"])
+    regions = page.evaluate("""window.__portal.regions.map((r) => ({id: r.id, name: r.name, short: r.short, the: r.the, bounds: r.bounds, max: r.zoom.max,
+        preview: r.zoom.max < (r.zoom.native || r.zoom.max), fine: r.fine.length, mask: !!r.mask, built: r.months.filter((m) => m.tiles).length,
+        stem: r.months[0].cog.split('/').pop().replace(/\\d{6}\\.tif$/, ''), epsg: (r.cat.source || {}).epsg || null}))""")
+    many = len(regions) > 1
     bg = page.evaluate("window.__portal.bg && {name: window.__portal.bg.name, km: window.__portal.bg.cell_km, layers: Object.keys(window.__portal.bg.layers)}")
     fine = page.evaluate("window.__portal.fine.map((a) => ({id: a.id, name: a.name, center: a.center}))")
     fine_zoom = page.evaluate("window.__portal.fineZoom")
+    notes.append(f"regions: {', '.join(r['name'] for r in regions)}")
     notes.append(f"tiles: zoom {zm['min']}-{zm['max']}" + (f" of {zm['native']} (a reduced copy)" if preview else " (the full set)")
                  + (f"; 30 m kept in {', '.join(f['name'] for f in fine)}" if fine else "")
                  + (f"; background {bg['name']} ({', '.join(bg['layers'])})" if bg else "; no background layer"))
@@ -183,6 +192,7 @@ with sync_playwright() as pw:
     check(cov["tag"] == "IMG" and cov["ok"] and cov["pe"] == "none" and cov["inCard"] and cov["cardInMap"] and 200 < cov["w"] < 320
           and abs(cov["w"] / cov["h"] - 720 / 316.3) < 0.05, f"coverage picture: a fixed image of {cov['w']:.0f} x {cov['h']:.0f} px inside the coverage card")
     reg = re.search(r'<g data-region="([^"]+)"><circle cx="([\d.]+)" cy="([\d.]+)" r="([\d.]+)"', cov["svg"])
+    marked = re.findall(r'<g data-region="([^"]+)">', cov["svg"])
 
     def equal_earth(lon, lat):                                   # the projection of pipeline/make_coverage_map.py, in its drawing units
         a1, a2, a3, a4, m = 1.340264, -0.081106, 0.000893, 0.003796, math.sqrt(3) / 2
@@ -196,9 +206,11 @@ with sync_playwright() as pw:
 
     ex, ey = equal_earth(127.7, 37.9)                            # the middle of the peninsula
     check(bool(reg) and reg.group(1) in cov["key"] and math.hypot(float(reg.group(2)) - ex, float(reg.group(3)) - ey) < 6
-          and cov["svg"].count("<path") == 3 and len(cov["svg"]) < 120_000,
+          and cov["svg"].count("<path") == 2 + len(regions) and len(cov["svg"]) < 120_000,
           f"coverage picture marks {reg.group(1) if reg else '?'} where it is on the Earth "
           f"({reg.group(2) if reg else '?'}, {reg.group(3) if reg else '?'} vs {ex:.1f}, {ey:.1f}); file {len(cov['svg']) / 1024:.0f} KB")
+    check(marked == [r["name"] for r in regions] and all(r["name"] in cov["key"] for r in regions) and all(r["name"] in page.inner_text("#factRegions") for r in regions),
+          f"the coverage picture, its key and the header name every region with maps: {', '.join(marked)}")
 
     if a.ref:
         ref = json.loads(Path(a.ref).read_text())
@@ -207,6 +219,9 @@ with sync_playwright() as pw:
                 continue
             name, zxy, *win = key.split("|")
             z, x, y = map(int, zxy.split("/"))
+            top = name.split("/")[0]                              # a tile of another region is kept in that region's folder
+            if top not in ("clim", "monthly") and top not in [r["id"] for r in regions]:
+                continue                                        # the copy under test does not have that region
             if z > zm["max"] and not (win and fine and z <= fine_zoom):
                 continue                                        # a reduced copy holds this level only inside its sample areas
             lid = "clim_annual" if "annual" in name else "et_" + name.split("_")[-1].split(".")[0]
@@ -415,6 +430,18 @@ with sync_playwright() as pw:
                 shown: getComputedStyle(document.querySelector('.pulse').parentElement).display !== 'none'}; }""")
     check(mk["shown"] and abs(mk["dx"]) < 12 and abs(mk["dy"]) < 12 and mk["labelLeft"] > 0 and mk["labelRight"] < mk["w"],
           f"'available now' marker sits on the peninsula and its label is inside the map (offset {mk['dx']:.0f}, {mk['dy']:.0f} px)")
+    # every region has its mark, in sight on the globe as it rests, with its label inside the map and clear of the others'
+    mks = page.evaluate("""() => { const p = window.__portal, m = p.map, box = m.getContainer().getBoundingClientRect(), c = m.getCenter(), rad = Math.PI / 180;
+        return [...document.querySelectorAll('.pulse')].map((e, i) => { const R = p.regions[i], lon = (R.bounds[0] + R.bounds[2]) / 2, lat = (R.bounds[1] + R.bounds[3]) / 2;
+            const r = e.getBoundingClientRect(), l = e.parentElement.querySelector('.pulse-label').getBoundingClientRect(), w = e.parentElement;
+            const arc = Math.acos(Math.sin(lat * rad) * Math.sin(c.lat * rad) + Math.cos(lat * rad) * Math.cos(c.lat * rad) * Math.cos((lon - c.lng) * rad)) / rad;
+            return {id: R.id, arc, shown: getComputedStyle(w).display !== 'none' && +getComputedStyle(w).opacity > 0.9, x: r.left + 7 - box.left, y: r.top + 7 - box.top,
+                    label: [l.left - box.left, l.top - box.top, l.right - box.left, l.bottom - box.top], w: box.width, h: box.height}; }); }""")
+    apart = all(a["label"][2] <= b["label"][0] or b["label"][2] <= a["label"][0] or a["label"][3] <= b["label"][1] or b["label"][3] <= a["label"][1]
+                for i, a in enumerate(mks) for b in mks[i + 1:])
+    check(len(mks) == len(regions) and all(k["shown"] and k["arc"] < 75 and 0 < k["label"][0] and k["label"][2] < k["w"] and 0 < k["label"][1] and k["label"][3] < k["h"] for k in mks) and apart,
+          "on the resting globe every region has its mark in sight and its label inside the map: "
+          + ", ".join(f"{k['id']} {k['arc']:.0f}° from the middle" for k in mks))
     page.screenshot(path=str(shots / "09_globe_seasonal.png"))
     # zoomed all the way out, the map asks for tiles coarser than the archive holds; they are averaged in the browser
     page.evaluate("window.__portal.map.jumpTo({zoom: 1.2})")
@@ -441,7 +468,7 @@ with sync_playwright() as pw:
     check(abs(v1["z"] - 4.6) < 0.05 and 7.3 <= v2["z"] <= 8.5 and abs(v2["lng"] - place[0]) < 0.3 and abs(v2["lat"] - place[1]) < 0.3
           and page.locator(".maplibregl-popup").count() == 0,
           f"outside Korea two clicks move in on the place (zoom {v1['z']:.2f}, then {v2['z']:.2f})")
-    check(n["kind"] == "outside" and n["shown"] and "Korean Peninsula" in n["text"] and "on request" in n["text"] and len(n["buttons"]) == 2
+    check(n["kind"] == "outside" and n["shown"] and all(r["name"] in n["text"] for r in regions) and "on request" in n["text"] and len(n["buttons"]) == 2
           and (not bg or (bg["name"] in n["text"] and "not Prithvi-OpenET-Tower" in n["text"])) and (not info["paper"] or info["paper"] in n["text"])
           and page.evaluate("getComputedStyle(document.querySelector('#steps')).visibility") == "hidden",
           "there a note says what is published: " + " ".join(n["text"].split())[:330])
@@ -479,6 +506,79 @@ with sync_playwright() as pw:
     settle(2400)
     v = view()
     check(4 < v["z"] < 8 and abs(v["lng"] - 128.1) < 1.5 and not note()["shown"], f"the note's button goes to the Korean Peninsula (zoom {v['z']:.2f})")
+
+    # Several regions: each of the others can be gone to, has its own numbers beside the map, its own maps under
+    # the cursor and at a clicked spot, its own files in the Download tab and its own examples in the Code tab.
+    for k, R in enumerate(regions[1:]):
+        lon, lat = (R["bounds"][0] + R["bounds"][2]) / 2, (R["bounds"][1] + R["bounds"][3]) / 2
+        page.locator(".map-tr .mbtn.more-region").nth(k).click()
+        settle(4200)
+        v = view()
+        st = page.evaluate("""() => { const t = (q) => document.querySelector(q).textContent.trim(), p = window.__portal;
+            return {focus: p.focus.id, kicker: t('#lyKicker'), meanL: t('#lyMeanL'), mean: t('#lyMean'), unit: t('#lyUnit'), sr: t('#srTitle'), cal: t('#calSub'),
+                    seg: [...document.querySelectorAll('#regionSeg button.on')].map((b) => b.dataset.region), res: t('#roRes')}; }""")
+        check(3 < v["z"] < 8 and R["bounds"][0] < v["lng"] < R["bounds"][2] and R["bounds"][1] < v["lat"] < R["bounds"][3] and "km per pixel" in st["res"],
+              f"the '{R['short']}' button fits {R['the']} (zoom {v['z']:.2f}, {st['res']})")
+        check(st["focus"] == R["id"] and R["name"] in st["kicker"] and st["meanL"] == f"{R['short']} mean" and st["sr"] == f"{R['short']} mean"
+              and st["seg"] == [R["id"]] and R["the"] in st["cal"] and bool(re.fullmatch(r"[\d,]+", st["mean"] or "")),
+              f"the cards beside the map turn to {R['the']}: '{st['kicker']}', {st['meanL']} {st['mean']} {st['unit']}")
+        page.screenshot(path=str(shots / f"20_region_{R['id']}.png"))
+        page.mouse.move(*xy(lon, lat))
+        page.wait_for_timeout(500)
+        ro = page.inner_text("#roVal")
+        page.mouse.click(*xy(lon, lat))
+        settle(2800)
+        page.wait_for_function("!document.querySelector('#srSub').textContent.startsWith('Reading')", timeout=30000)
+        try:                                                    # the record box of this spot, not what an earlier one left in it
+            page.wait_for_function("!document.querySelector('#recordBox').hidden && document.querySelector('#rcSub').textContent.includes('had a clear observation')", timeout=180000)
+            got = True
+        except Exception:
+            got = False
+        v = view()
+        csv_text, rows = record_csv() if got else ("(no record)", [])
+        head = csv_text.splitlines()[0]
+        check(got and "mm/year" in ro and (not bg or bg["name"] not in ro) and abs(v["z"] - min(9.2, R["max"] - 0.3)) < 0.05
+              and page.locator("#chart svg path").count() >= 1 and f"of {R['built']} months" in page.inner_text("#rcSub")
+              and len(rows) == R["built"] + 1 and R["name"] in head and (" cell)" in head if R["preview"] else "(30 m pixel)" in head),
+              f"{R['name']}: a value of ours under the cursor ('{ro}'), and a click gives the series of that spot ({page.inner_text('#srSub')[:60]}…; CSV: {head[head.index('('):]})")
+        if R["preview"]:
+            page.evaluate("window.__portal.map.jumpTo({zoom: 10.6})")
+            settle(1500)
+            n = note()
+            others = [o for o in regions if o["fine"]]
+            want = min(3, R["fine"]) if R["fine"] else (1 if others else 0)
+            check(n["kind"] == "finest" and n["shown"] and "finest level here" in n["text"] and len(n["buttons"]) == want
+                  and (R["fine"] or not others or "30 m sample areas" in n["buttons"][0]),
+                  f"{R['name']}: past the finest level the note says so" + (f" and points to the region that has sample areas: {n['buttons']}" if not R["fine"] and others else ""))
+            page.screenshot(path=str(shots / f"21_region_{R['id']}_finest.png"))
+        if R["mask"]:      # a place inside the region's bounding box that its maps do not cover is not the region's
+            hits = page.evaluate("""(b) => { const p = window.__portal, f = 0.03, w = b[2] - b[0], h = b[3] - b[1];
+                return [[b[0] + f * w, b[1] + f * h], [b[2] - f * w, b[1] + f * h], [b[0] + f * w, b[3] - f * h], [b[2] - f * w, b[3] - f * h], [(b[0] + b[2]) / 2, (b[1] + b[3]) / 2]]
+                    .map(([x, y]) => { const r = p.regionAt(x, y); return r ? r.id : null; }); }""", R["bounds"])
+            check(hits[4] == R["id"] and None in hits[:4],
+                  f"{R['name']}: the middle of its bounding box is the region, its corners are not all ({hits[:4]}): the catalog's mask decides, not the box")
+        page.click(".tab[data-tab=download]")
+        page.wait_for_timeout(300)
+        dl = page.evaluate("""() => ({region: document.querySelector('#dlRegion').value, rows: document.querySelectorAll('#dlTable tbody tr').length,
+            first: document.querySelector('#dlTable tbody tr td.mono').textContent, grid: document.querySelector('#dlGrid').textContent, lead: document.querySelector('#dlLead').textContent})""")
+        page.click(".tab[data-tab=code]")
+        page.wait_for_timeout(300)
+        code = page.inner_text("#codePy") + page.inner_text("#codeTs")
+        check(dl["region"] == R["id"] and dl["rows"] > 100 and dl["first"].startswith(R["stem"]) and (not R["epsg"] or f"EPSG:{R['epsg']}" in dl["grid"]) and R["the"] in dl["lead"]
+              and R["stem"] in code and (not R["epsg"] or f"EPSG:{R['epsg']}" in code) and page.input_value("#codeRegion") == R["id"],
+              f"{R['name']}: the Download tab lists its files ({dl['rows']} rows, {dl['first']}; {dl['grid']}) and the Code tab's examples are written for it")
+        page.click(".tab[data-tab=explore]")
+        page.wait_for_timeout(400)
+    if many:      # back by the choice above the cards: the map goes to the first region and the cards follow
+        page.click(f'#regionSeg button[data-region="{regions[0]["id"]}"]')
+        settle(4200)
+        v = view()
+        if page.locator("#srReset").is_visible():
+            page.click("#srReset")
+        check(regions[0]["bounds"][0] < v["lng"] < regions[0]["bounds"][2] and page.evaluate("window.__portal.focus.id") == regions[0]["id"]
+              and page.inner_text("#lyMeanL") == f"{regions[0]['short']} mean" and page.inner_text("#srTitle") == f"{regions[0]['short']} mean",
+              f"the choice above the cards takes the map back to {regions[0]['the']} (zoom {v['z']:.2f}), and the cards with it")
+
 
     cta = page.evaluate("""() => { const b = document.querySelector('.tab-cta'), s = getComputedStyle(b);
         return {bg: s.backgroundColor, color: s.color, radius: s.borderTopLeftRadius, anim: s.animationName}; }""")
@@ -543,8 +643,14 @@ with sync_playwright() as pw:
               f"phone, {label}: the readout ('{lay['text']}') is clear of the legend and the controls"
               + (f"; the legend starts below the globe ({lay['legendTop']:.0f} px, globe ends at {bottom:.0f} px)" if q else ""))
         ph.locator(".mapwrap").screenshot(path=str(shots / f"16b_phone_map_{'embedded' if q else 'alone'}.png"))
-        # 'Peninsula' fits the region between the readout and the legend, not behind the legend
-        ph.tap("#btnHome")
+        # 'Peninsula' fits the region between the readout and the legend, not behind the legend. With several
+        # regions a phone-width map has no room for their buttons: they are in the "Go to" list.
+        if ph.locator("#btnHome").is_visible():
+            ph.tap("#btnHome")
+        else:
+            check(many and ph.locator('#jump optgroup[label="Regions"] option').count() == len(regions),
+                  f"phone, {label}: the regions' buttons give way to the 'Go to' list, which has all {len(regions)} regions")
+            ph.select_option("#jump", value="region:" + regions[0]["id"])
         ph.wait_for_timeout(2400)
         fit = ph.evaluate("""() => { const p = window.__portal, m = p.map, mb = m.getContainer().getBoundingClientRect();
             const lg = document.querySelector('#legend').getBoundingClientRect(), ro = document.querySelector('#readout').getBoundingClientRect();
@@ -685,7 +791,7 @@ with sync_playwright() as pw:
     dl = ng.locator("#tab-download").is_visible()
     ng.click(".tab[data-tab=explore]")
     ng.wait_for_timeout(300)
-    check(st["cls"].split() == ["nomap"] and not st["boot"] and st["msg"] and "WebGL" in st["text"] and "open it again" in st["text"]
+    check([c for c in st["cls"].split() if c != "multi"] == ["nomap"] and not st["boot"] and st["msg"] and "WebGL" in st["text"] and "open it again" in st["text"]
           and not st["map"] and not st["legend"] and not st["controls"] and not st["hint"] and st["cards"],
           "without WebGL the page says in the map's place why there is no map, and its loading screen goes: " + st["text"].splitlines()[0])
     check(t2 != st["title"] and "mean" in t2 and dl and ng.evaluate("() => { " + VIS + " return vis('#noMap'); }"),
