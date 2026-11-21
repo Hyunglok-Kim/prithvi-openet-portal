@@ -417,12 +417,14 @@ python pipeline/make_preview_copy.py --src /path/to/out/fr --out /path/to/public
   tag — moves to the lower right of its place (`.city.aside`), and is not shown where that is
   taken too: Toulouse has three areas just west of it, Rennes one. Nothing on the Korean Peninsula
   is close enough for either rule to act.
-- **The public archives of France were built on the lab's server, the sample-area archives on a
-  Mac.** A rebuild elsewhere gives archives with the same tiles and the same size but two other
-  bytes (the "system" byte in the header of the two compressed blocks inside a PMTiles file,
-  which the Python version sets). So after a rebuild of that copy, compare before committing
-  (same size, `cmp -l` shows two bytes) and commit only what is new — the `.fine.pmtiles`, the
-  catalog, the README — instead of 5 GB of archives that say the same.
+- **A rebuild with another Python gives the same tiles in files that differ by two bytes.** The
+  PMTiles library compresses an archive's directory and its metadata with `gzip.compress(…,
+  mtime=0)`. Python 3.10 writes 255 into the "system" byte of that header; from 3.11 on zlib
+  writes its own code (19 on macOS). The public archives of both regions were made with the
+  older one; France's sample-area archives were made later with 3.12. So after a rebuild of a
+  public copy, compare before committing: where an archive has the same size and `cmp -l` shows
+  two bytes, it says the same, and only what is new goes in — the `.fine.pmtiles`, the catalog,
+  the README — not gigabytes of archives with another byte in their headers.
 - **Going to a sample area shows its pixels** (`goFine`): the tag, the "Go to" list, the note's
   buttons, a click on or just beside a square, or a click inside the outline at the regional view
   all fill the map with the area, at 3 screen pixels per native pixel or more (map zoom 12.6 to
