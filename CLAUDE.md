@@ -548,13 +548,16 @@ posts. To edit it again: Webflow Designer → Pages → Data → Navigator → C
 embed". The editor is CodeMirror, so copy the text out, patch it, and paste it back.
 
 **Open the Designer by the Data page's own address**, `…design.webflow.com/?pageId=` followed by
-the `data-wf-page` value in the live page's `<html>` tag, never by the site's plain address. Opened
-plainly it lands on the home page, and Webflow re-measures the pictures of a page that is open in
-the Designer and keeps new `sizes` values for them, which go out with the next publish by anyone.
-On 2026-11-21 a session of ours landed on Home for forty seconds on its way to Data and touched
-nothing; its own publish left Home as it was, and the next publish, by someone else, sent three
-of Home's pictures out with `sizes` of 31 to 144 px, so that they were drawn from the smallest
-file. A clean comparison of one's own publish does not clear this: tell the next publisher.
+the `data-wf-page` value in the live page's `<html>` tag, rather than by the site's plain address,
+which lands on the home page: stay off pages that are not yours. Webflow works out the `sizes` of
+a page's pictures by itself, and twice on 2026-11-21 a publish sent three of the home page's
+pictures out with values of 31 to 144 px, so that they were drawn from the smallest file. **What
+sets that off is not known.** The second time it was first put down to a session of ours that had
+landed on Home for half a minute on its way to Data; the day's record did not bear that out
+(four publishes that followed a visit to Home, two of them ours, left the values alone; both
+publishes that changed them followed work on the project pages). So compare the whole site
+before and after a publish, pictures' `sizes` included, look at Home again after the next publish
+by anybody, and do not name a cause before the record of all the day's publishes has been read.
 
 The page has an entrance of its own (since 2026-11-16): on a click on a dataset card the panel
 fades in, and the frame stays hidden behind a breathing globe mark ("Opening the portal") until
