@@ -34,7 +34,9 @@ TILES = [("clim/KP_ET_clim_annual.pmtiles", 8, 218, 99),       # mid-zoom, centr
          ("fr/monthly/FR_ET_202107.pmtiles", 10, 519, 361),    # the finest level of a reduced copy, the Massif Central
          ("fr/monthly/FR_ET_202107.pmtiles", 5, 16, 11)]       # overview: most of France in one tile
 WINDOWS = [("clim/KP_ET_clim_annual.pmtiles", 12, 127.24966, 38.20140),     # the middle of the Cheorwon area
-           ("monthly/KP_ET_202107.pmtiles", 12, 126.35914, 36.50566)]       # the middle of the Anmyeon area
+           ("monthly/KP_ET_202107.pmtiles", 12, 126.35914, 36.50566),       # the middle of the Anmyeon area
+           ("fr/clim/FR_ET_clim_annual.pmtiles", 12, 1.95172, 48.84432),    # France: the middle of the Grignon area
+           ("fr/monthly/FR_ET_202107.pmtiles", 12, 3.59589, 43.74136)]      # the middle of the Puéchabon area
 WIN = 32                                                       # window size, px (about 1 km: well inside a 6.7 km area)
 
 
@@ -52,6 +54,8 @@ for name, z, x, y in TILES:
     out[f"{name}|{z}/{x}/{y}"] = {"sum": int(a.astype(np.int64).sum()), "n255": int((a == 255).sum()),
                                   "px": [int(a[10, 10]), int(a[128, 128]), int(a[50, 200]), int(a[255, 0])]}
 for name, z, lon, lat in WINDOWS:
+    if not os.path.exists(f"{root}/{name}"):
+        continue
     n = 256 * 2 ** z
     px, py = (lon + 180) / 360 * n, (1 - math.asinh(math.tan(math.radians(lat))) / math.pi) / 2 * n
     x, y = int(px // 256), int(py // 256)

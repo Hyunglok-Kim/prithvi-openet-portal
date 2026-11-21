@@ -676,6 +676,7 @@ function initMap() {
   map.on("load", () => {
     $("#boot").classList.add("out");
     setTimeout(() => $("#boot").remove(), 500);
+    tagRoom();
     addMarkers();
     addFineAreas();
     loadLand();
@@ -840,12 +841,51 @@ function addFineAreas() {
       onclick: (e) => { e.stopPropagation(); goFine(a); } }, [a.name, el("small", {}, "30 m")]);       // not a click on the map underneath
     return new maplibregl.Marker({ element: el("div", {}, btn), anchor: "bottom", offset: [0, -3], opacityWhenCovered: "0" }).setLngLat([a.center[0], a.bounds[3]]).addTo(map);
   });
-  /* A line for them in the coverage card; they are in the "Go to" list as well (buildJump). */
+  /* A line for them in the coverage card (which regions, when not every region has them); they are in the
+     "Go to" list as well (wire). */
   const row = $("#covFine"), held = REG.filter((R) => R.fine.length);
   row.querySelector("span:last-child").replaceChildren(el("b", {}, "30 m"), ` · ${numWord(FINE.length)} sample area${FINE.length > 1 ? "s" : ""}` +
-    (REG.length > 1 ? ` (${wordList(held.map((R) => R.name))})` : ""));
+    (held.length < REG.length ? ` (${wordList(held.map((R) => R.name))})` : ""));
   row.hidden = false;
   onZoom();
+}
+/* Labels on the map are placed by arithmetic, not by measuring the page: where a place is in MapLibre's world
+   at zoom 0 (512 px across). Once the globe has flattened (about zoom 6) two places are their distance here
+   times 2^zoom apart on screen, wherever the map has been moved to. */
+const worldXY = (lng, lat) => { const s = Math.sin(lat * Math.PI / 180); return [(lng + 180) / 360 * 512, (0.5 - Math.log((1 + s) / (1 - s)) / (4 * Math.PI)) * 512]; };
+const textWidth = (() => {
+  let c = null;
+  return (text, font) => { c = c || document.createElement("canvas").getContext("2d"); c.font = font; return c.measureText(text).width; };
+})();
+const TAG_H = 22, TAG_FROM = 7, TAG_BY = 9.6;      // a name tag's height in px; the zoom name tags come in at; and the zoom by which every tag is one, room or not
+/* How far in the map must be before an area's name tag has room (worked out once, before the marks are
+   made). Far out an area is a small square; from zoom 7 it is a tag with its name — unless a neighbour's tag
+   would lie on it: the areas around Toulouse are 11 to 22 km apart, and at zoom 7 that is 25 to 50 px for
+   tags some 100 px wide. Such neighbours stay squares until the map has grown enough to part their tags
+   (side by side, or one above the other), and then turn into tags together. */
+function tagRoom() {
+  const font = `600 11.5px ${getComputedStyle(document.body).fontFamily}`;
+  for (const a of FINE) { a.tagXY = worldXY(a.center[0], a.bounds[3]); a.tagW = Math.ceil(textWidth(a.name, font) + textWidth("30 m", font) + 30); a.tagZoom = TAG_FROM; }
+  const close = [];                                                // pairs whose tags would touch at the zoom tags come in, with the zoom that parts them
+  FINE.forEach((a, i) => FINE.slice(i + 1).forEach((b) => {
+    const dx = Math.abs(a.tagXY[0] - b.tagXY[0]), dy = Math.abs(a.tagXY[1] - b.tagXY[1]);
+    const z = Math.min(Math.log2(((a.tagW + b.tagW) / 2 + 6) / dx), Math.log2((TAG_H + 4) / dy), TAG_BY);
+    if (z > TAG_FROM) close.push([a, b, z]);
+  }));
+  for (let again = true; again;) {                                 // neighbours wait for one another: a group changes at the zoom its closest pair needs
+    again = false;
+    for (const [a, b, z] of close) {
+      const top = Math.max(a.tagZoom, b.tagZoom, z);
+      if (a.tagZoom < top || b.tagZoom < top) { a.tagZoom = b.tagZoom = top; again = true; }
+    }
+  }
+}
+/* What an area's mark covers at a zoom, in screen px from its anchor's place in the world: the square far out,
+   the name tag closer in (nothing below zoom 4.2, where the marks are not shown). [x0, y0, x1, y1] */
+function markBox(a, z) {
+  if (z < 4.2) return null;
+  const k = 2 ** z, x = a.tagXY[0] * k, y = a.tagXY[1] * k, w = z < a.tagZoom ? 12 : a.tagW;
+  return [x - w / 2, y - 3 - (z < a.tagZoom ? 12 : TAG_H), x + w / 2, y - 3];
 }
 /* Going to a sample area means seeing its pixels. At 1–2 screen pixels per native pixel an area is hard
    to tell from the 120 m cells around it; from about 3 screen pixels on, the grid and the thin features
@@ -862,7 +902,8 @@ function goFine(a) {
 }
 /* A sample area a click was meant for: far out they are squares a few pixels wide, so a near miss counts. */
 function fineNear(point) {
-  return FINE.find((a) => { const p = map.project(a.center); return Math.hypot(p.x - point.x, p.y - point.y) <= 12; }) || null;
+  const near = FINE.map((a) => { const p = map.project(a.center); return [Math.hypot(p.x - point.x, p.y - point.y), a]; }).filter(([d]) => d <= 12).sort((p, q) => p[0] - q[0]);
+  return near.length ? near[0][1] : null;
 }
 let cityMarkers = [], pulses = [];
 /* Our place names of all the regions, in one list (the "Go to" list refers to them by their place in it). */
@@ -878,18 +919,33 @@ function addMarkers() {
     const node = el("div", { style: "width:14px;height:14px" }, [el("div", { class: "pulse" }), el("div", { class: "pulse-label" + (left ? " to-left" : "") }, "Available now")]);
     return new maplibregl.Marker({ element: node, anchor: "center", opacityWhenCovered: "0" }).setLngLat([midLon(R) - 0.6, midLat(R) - 0.6]).addTo(map);
   });
-  cityMarkers = places().map((p) =>
-    new maplibregl.Marker({ element: el("div", {}, el("span", { class: "city" }, p.name)), anchor: "bottom", opacityWhenCovered: "0" }).setLngLat([p.lng, p.lat]).addTo(map));
+  const font = `500 11.5px ${getComputedStyle(document.body).fontFamily}`;
+  cityMarkers = places().map((p) => ({ xy: worldXY(p.lng, p.lat), w: Math.ceil(textWidth(p.name, font)) + 4,
+    m: new maplibregl.Marker({ element: el("div", {}, el("span", { class: "city" }, p.name)), anchor: "bottom", opacityWhenCovered: "0" }).setLngLat([p.lng, p.lat]).addTo(map) }));
   onZoom();
+}
+/* A city's name stands over its place. Where the mark of a sample area would lie on it — the square far out,
+   the name tag closer in — the name moves to the lower right of its place, and where that is taken as well
+   it is not shown: the areas are what the map is for, the names are there to find one's way. (Toulouse has
+   three areas just west of it, one of them with its name; Rennes has one.) */
+function placeCities(z) {
+  const on = z >= 5.6 && z <= 10.6, k = 2 ** z, marks = on ? FINE.map((a) => markBox(a, z)).filter(Boolean) : [];
+  const hit = (b) => marks.some((m) => b[0] < m[2] + 2 && m[0] - 2 < b[2] && b[1] < m[3] + 2 && m[1] - 2 < b[3]);
+  for (const c of cityMarkers) {
+    const span = c.m.getElement().firstChild, x = c.xy[0] * k, y = c.xy[1] * k;
+    const over = on && hit([x - c.w / 2, y - 17, x + c.w / 2, y - 3]), aside = over && !hit([x + 4, y + 2, x + 8 + c.w, y + 17]);      // where the name is drawn: over its place, or to the lower right (.city.aside)
+    span.classList.toggle("aside", aside);
+    span.style.opacity = on && (!over || aside) ? "1" : "0";
+  }
 }
 function onZoom() {
   if (!map) return;
   const z = map.getZoom();
   for (const p of pulses) p.getElement().style.display = z < 4.2 ? "" : "none";
-  for (const m of cityMarkers) m.getElement().firstChild.style.opacity = z >= 5.6 && z <= 10.6 ? "1" : "0";
   /* Far out the areas are a few pixels apart, so each is a small square (its name shows on hover); the
-     name tags come in once there is room for them. */
-  for (const m of fineTags) { const t = m.getElement().firstChild; t.style.display = z >= 4.2 ? "" : "none"; t.classList.toggle("compact", z < 7); }
+     name tags come in once there is room for them (tagRoom). */
+  fineTags.forEach((m, i) => { const t = m.getElement().firstChild; t.style.display = z >= 4.2 ? "" : "none"; t.classList.toggle("compact", z < FINE[i].tagZoom); });
+  placeCities(z);
   $("#coverCard").classList.toggle("dim", z > 7.2);
   const c = map.getCenter();
   if (map.getLayer("et")) map.setPaintProperty("et", "raster-resampling", z > regionOr(c.lng, c.lat).zoom.max - 0.4 ? "nearest" : "linear");
@@ -975,7 +1031,7 @@ function demandPopup(lngLat) {
      "finest"   zoomed past the finest level of a reduced copy, outside its sample areas.
    It names what is on screen and where the detail is. Closing it keeps it closed until the view
    leaves that situation. */
-let noteShown = null, noteOff = null;
+let noteShown = null, noteOff = null, noteSaid = "";
 const reviewClause = () => (CFG.paperStatus ? `While the paper is ${CFG.paperStatus}, ` : "");
 const capFirst = (s) => s.charAt(0).toUpperCase() + s.slice(1);
 function noteKind() {
@@ -983,15 +1039,21 @@ function noteKind() {
   if (!R) return z >= outNoteZoom(c.lat) && onLand(c.lng, c.lat) ? "outside" : null;
   return !regFull(R) && z >= R.zoom.max - 0.4 && !fineAreaAt(c.lng, c.lat) ? "finest" : null;
 }
+/* The areas of a region nearest to a place, nearest first. */
+const fineNearest = (R, lng, lat, n) => [...R.fine].sort((a, b) => Math.hypot((a.center[0] - lng) * Math.cos(lat * Math.PI / 180), a.center[1] - lat) -
+                                                                  Math.hypot((b.center[0] - lng) * Math.cos(lat * Math.PI / 180), b.center[1] - lat)).slice(0, n);
 function updateNote(redraw) {
   const kind = noteKind(), box = $("#zoomNote");
   if (!kind) noteOff = null;
-  const show = kind && noteOff !== kind ? kind : null;
-  if (show === noteShown && !redraw) return;
-  noteShown = show;
+  const show = kind && noteOff !== kind ? kind : null, c = map.getCenter();
+  /* what the note is about: the nearest region for "outside"; the region and its nearest areas for "finest". The
+     view can move a long way inside one situation, and the note then has to follow. */
+  const said = !show ? "" : show === "outside" ? regionsByDistance(c.lng, c.lat)[0].id
+    : ((R) => `${R.id}:${fineNearest(R, c.lng, c.lat, 3).map((a) => a.id)}`)(regionOr(c.lng, c.lat));
+  if (show === noteShown && said === noteSaid && !redraw) return;
+  noteShown = show; noteSaid = said;
   box.hidden = !show;
   if (!show) return;
-  const c = map.getCenter();
   if (show === "outside") {
     const bg = currentBg(), many = REG.length > 1;
     $("#znHead").textContent = `Only ${theRegions()} ${many ? "have" : "has"} detailed maps for now`;
@@ -1003,24 +1065,31 @@ function updateNote(redraw) {
       ...regionsByDistance(c.lng, c.lat).slice(0, 1).map((R) => el("button", { class: "primary small", onclick: () => goRegion(R) }, `Go to ${R.the}`)),
       el("button", { class: "ghost", onclick: () => { const p = map.getCenter(); prefillRequest(p.lng, p.lat); showTab("request"); } }, "Request this area"));
   } else {
-    const n = FINE.length, R = regionOr(c.lng, c.lat);
+    const n = FINE.length, R = regionOr(c.lng, c.lat), own = R.fine.length;
     $("#znHead").textContent = `${finestRes(R)} is the finest level here for now`;
+    /* the areas of the region the view is on, in that region's own words; a region that has none hears where they are */
+    const where = own ? `${numWord(own)} sample area${own > 1 ? "s" : ""}${R.fineWhat ? `, ${R.fineWhat}` : ""}` : fineWords("sample area");
     $("#znText").textContent = n
-      ? capFirst(`${reviewClause()}the native 30 m maps are shown only in ${fineWords()}. The full 30 m maps will be released after the paper is accepted.`)
+      ? capFirst(`${reviewClause()}the native 30 m maps${own && REG.length > 1 ? ` of ${R.the}` : ""} are shown only in ${where}. The full 30 m maps will be released after the paper is accepted.`)
       : `This public preview stops at about ${finestRes(R)} per pixel. The 30 m maps will be released after the paper is accepted.`;
     /* the nearest areas of this region first (all of them are in the "Go to" list); a region that has none
        points to the nearest region that has */
-    const near = [...R.fine].sort((a, b) => Math.hypot((a.center[0] - c.lng) * Math.cos(c.lat * Math.PI / 180), a.center[1] - c.lat) -
-                                            Math.hypot((b.center[0] - c.lng) * Math.cos(c.lat * Math.PI / 180), b.center[1] - c.lat)).slice(0, 3);
+    const near = fineNearest(R, c.lng, c.lat, 3);
     const other = near.length ? null : regionsByDistance(c.lng, c.lat).find((k) => k.fine.length);
     $("#znBtns").replaceChildren(...near.map((a) => el("button", { class: "primary small", onclick: () => goFine(a) }, `${a.name} · 30 m`)),
       ...(other ? [el("button", { class: "primary small", onclick: () => goRegion(other) }, `30 m sample areas · ${other.name}`)] : []));
   }
 }
-/* "eight sample areas, around the paper's Korean flux-tower sites" — the catalogs say what the areas are. */
-function fineWords() {
-  const what = [...new Set(REG.filter((R) => R.fine.length).map((R) => R.fineWhat).filter(Boolean))];
-  return `${numWord(FINE.length)} sample area${FINE.length > 1 ? "s" : ""}${what.length ? `, ${what.join(" and ")}` : ""}`;
+/* The sample areas of the whole site in words, region by region — a catalog says what its region's areas are:
+   "eight small areas around the paper's Korean flux-tower sites and eleven around the paper's French
+   flux-tower sites", with the areas' names after each when asked for. */
+function fineWords(noun, names) {
+  const held = REG.filter((R) => R.fine.length);
+  return wordList(held.map((R, i) => {
+    const n = R.fine.length;
+    return numWord(n) + (i ? "" : ` ${noun}${n > 1 ? "s" : ""}`) + (R.fineWhat ? ` ${R.fineWhat}` : held.length > 1 ? ` in ${R.the}` : "") +
+      (names ? ` (${wordList(R.fine.map((a) => a.name))})` : "");
+  }));
 }
 let shownTiles = "", shownBg = "";      // what the two sources were last given: asking again for the same tiles would only make the map blink
 function syncBackground() {
@@ -1655,7 +1724,7 @@ function wire() {
      names region by region. The list snaps back to its prompt once a choice is made. */
   const many = REG.length > 1, spots = places(), jump = $("#jump");
   if (many) jump.append(el("optgroup", { label: "Regions" }, REG.map((R) => el("option", { value: "region:" + R.id }, R.name))));
-  if (FINE.length) jump.append(el("optgroup", { label: "30 m areas" }, FINE.map((a, i) => el("option", { value: "fine:" + i }, a.name))));
+  for (const R of REG) if (R.fine.length) jump.append(el("optgroup", { label: many ? `30 m areas · ${R.name}` : "30 m areas" }, R.fine.map((a) => el("option", { value: "fine:" + FINE.indexOf(a) }, a.name))));
   for (const R of REG) {
     const own = spots.map((p, i) => [p, i]).filter(([p]) => p.region === R);
     if (own.length) jump.append(el("optgroup", { label: many ? `Cities · ${R.name}` : "Cities" }, own.map(([p, i]) => el("option", { value: "city:" + i }, p.name))));
@@ -1705,13 +1774,11 @@ function wire() {
 /* Wording for a reduced copy of the tiles (see fullRes). The page's own text describes the full set;
    this replaces every sentence that would promise more than the tiles on hand can show. */
 function applyPreviewWording() {
-  const fine = finestAll(), n = FINE.length, names = wordList(FINE.map((a) => a.name));
-  const what = [...new Set(REG.filter((R) => R.fine.length).map((R) => R.fineWhat).filter(Boolean))];
-  const areas = `${numWord(n)} small area${n > 1 ? "s" : ""}${what.length ? ` ${what.join(" and ")}` : ""}`;      // "eight small areas around the paper's Korean flux-tower sites"
+  const fine = finestAll(), n = FINE.length;
   const low = REG.filter((R) => !regFull(R)), one = low.length === 1;      // the regions whose copy is a reduced one
   document.querySelector('#steps span[data-step="2"]').textContent = `Finest here · ${finestRes(FOCUS)}`;
   $("#hint").textContent = `Click ${theRegions("or")}: the map zooms in to about ${fine} per pixel, the finest level of this public preview, and the panel on the right shows the monthly series at that spot.` +
-    (n ? ` ${capFirst(areas)} ${n > 1 ? "go" : "goes"} on to the native 30 m; ${n > 1 ? "they are" : "it is"} outlined on the map and listed under “Go to”.` : "") +
+    (n ? ` ${capFirst(fineWords("small area"))} ${n > 1 ? "go" : "goes"} on to the native 30 m; ${n > 1 ? "they are" : "it is"} outlined on the map and listed under “Go to”.` : "") +
     " The 30 m maps themselves are the GeoTIFFs.";
   $("#rcHead").textContent = "Full record at this spot";
   $("#tilesZoom").textContent = `zoom ${low[0].zoom.min}–${low[0].zoom.max} on this public copy, about ${fine} per pixel at best` +
@@ -1721,7 +1788,7 @@ function applyPreviewWording() {
   const li = $("#abPreview");
   li.replaceChildren(el("b", {}, "This site shows a reduced copy."), ` The maps on this page stop at about ${fine} per pixel` +
     (one ? "" : ` (${wordList(low.map((R) => `${finestRes(R)} in ${R.the}`))})`) + `, and a value read at a clicked spot is the mean over ${one ? `a ${fine} cell` : "one such cell"}.` +
-    (n ? ` ${capFirst(areas)} (${names}) ${n > 1 ? "keep" : "keeps"} the native 30 m.` : "") + " The 30 m maps are the GeoTIFFs.");
+    (n ? ` ${capFirst(fineWords("small area", true))} ${n > 1 ? "keep" : "keeps"} the native 30 m.` : "") + " The 30 m maps are the GeoTIFFs.");
   li.hidden = false;
 }
 /* What the page says about its regions: their names wherever the page lists what is ready, and the parts of

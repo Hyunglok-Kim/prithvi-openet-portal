@@ -11,7 +11,8 @@ https://hydroai.net/data#et.
 **Status: public preview.** The paper on this dataset is under review. Two regions have ready-made
 maps: the Korean Peninsula and France (the mainland and Corsica), both from April 2013 onward. The
 public site shows the maps down to about 120 m per pixel (a reduced copy of the browse tiles), and
-at the native 30 m in eight small areas around the paper's Korean flux-tower sites. The full 30 m
+at the native 30 m in nineteen small areas around the paper's flux-tower sites, eight on the Korean
+Peninsula and eleven in France. The full 30 m
 maps and the GeoTIFFs will be released after the paper is accepted. The model code is at
 [Prithvi_OpenET_code_public](https://github.com/Hyunglok-Kim/Prithvi_OpenET_code_public).
 

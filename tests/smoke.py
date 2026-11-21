@@ -9,8 +9,10 @@ It adapts to the tiles it finds:
   - the full set: the second click reaches the native 30 m;
   - a reduced copy (zoom.max below zoom.native in the catalog): the page says so and stops at the
     finest level there is, with a note at the top of the map when the visitor zooms past it;
-  - a reduced copy with sample areas (catalog "fine"): those areas go on to 30 m and hold the full
-    set's numbers; outside their outlines nothing is finer than the copy;
+  - a reduced copy with sample areas (catalog "fine", in any of the regions): those areas go on to
+    30 m and hold the full set's numbers; outside their outlines nothing is finer than the copy;
+    areas that stand close together stay squares until their name tags have room, and no city name
+    lies under a mark;
   - a background layer (catalog "background"): the rest of the globe carries another product, and
     every value read from it is shown under that product's name;
   - several regions (the first catalog lists others under "regions"): the globe rests where each has
@@ -147,7 +149,8 @@ with sync_playwright() as pw:
         stem: r.months[0].cog.split('/').pop().replace(/\\d{6}\\.tif$/, ''), epsg: (r.cat.source || {}).epsg || null}))""")
     many = len(regions) > 1
     bg = page.evaluate("window.__portal.bg && {name: window.__portal.bg.name, km: window.__portal.bg.cell_km, layers: Object.keys(window.__portal.bg.layers)}")
-    fine = page.evaluate("window.__portal.fine.map((a) => ({id: a.id, name: a.name, center: a.center}))")
+    fine = page.evaluate("window.__portal.fine.map((a) => ({id: a.id, name: a.name, center: a.center, region: a.region.id, tagZoom: a.tagZoom}))")
+    fine0 = [f for f in fine if f["region"] == regions[0]["id"]]      # the first region's own
     fine_zoom = page.evaluate("window.__portal.fineZoom")
     notes.append(f"regions: {', '.join(r['name'] for r in regions)}")
     notes.append(f"tiles: zoom {zm['min']}-{zm['max']}" + (f" of {zm['native']} (a reduced copy)" if preview else " (the full set)")
@@ -222,8 +225,9 @@ with sync_playwright() as pw:
             top = name.split("/")[0]                              # a tile of another region is kept in that region's folder
             if top not in ("clim", "monthly") and top not in [r["id"] for r in regions]:
                 continue                                        # the copy under test does not have that region
-            if z > zm["max"] and not (win and fine and z <= fine_zoom):
-                continue                                        # a reduced copy holds this level only inside its sample areas
+            rid = top if top in [r["id"] for r in regions] else regions[0]["id"]      # the region the tile is of
+            if z > zm["max"] and not (win and z <= fine_zoom and any(f["region"] == rid for f in fine)):
+                continue                                        # a reduced copy holds this level only inside its sample areas, where that region has any
             lid = "clim_annual" if "annual" in name else "et_" + name.split("_")[-1].split(".")[0]
             if win:                                             # a window inside a sample area: the full set's numbers
                 r0, c0, h, w = map(int, win[0].split(","))
@@ -252,34 +256,67 @@ with sync_playwright() as pw:
                 return {text: t.textContent, shown: getComputedStyle(t).display !== 'none', compact: t.classList.contains('compact'), w: r.width}; })""")
         far = tags()
         cov = page.evaluate("(() => { const r = document.querySelector('#covFine'); return {shown: !r.hidden, text: r.textContent}; })()")
-        go = page.evaluate("""[...document.querySelectorAll('#jump optgroup[label="30 m areas"] option')].map((o) => o.textContent)""")
+        go = page.evaluate("""[...document.querySelectorAll('#jump optgroup[label^="30 m areas"]')].map((g) => [g.label, [...g.children].map((o) => o.textContent)])""")
+        held = [r for r in regions if r["fine"]]
         check(len(far) == len(fine) and all(t["shown"] and "30 m" in t["text"] and t["compact"] and t["w"] < 20 for t in far)
-              and page.evaluate("!!window.__portal.map.getLayer('fine-line')") and cov["shown"] and "30 m" in cov["text"]
-              and go == [f["name"] for f in fine],
-              f"sample areas: {len(far)} small squares on the peninsula view, a line in the coverage card ('{cov['text'].strip()}'), all in the 'Go to' list")
+              and page.evaluate("!!window.__portal.map.getLayer('fine-line')") and cov["shown"] and "30 m" in cov["text"] and "sample area" in cov["text"]
+              and go == [[f"30 m areas · {r['name']}" if many else "30 m areas", [f["name"] for f in fine if f["region"] == r["id"]]] for r in held],
+              f"sample areas: {len(far)} small squares far out, a line in the coverage card ('{cov['text'].strip()}'), all in the 'Go to' list"
+              + (f", region by region ({', '.join(str(len(g[1])) for g in go)})" if many else ""))
         page.screenshot(path=str(shots / "02_peninsula.png"))
+    if fine0:
         # a click just beside a square is meant for the area, and so is a click inside the outline at the regional view
-        x, y = xy(*fine[1]["center"])
+        x, y = xy(*fine0[1]["center"])
         page.mouse.click(x + 7, y + 5)
         settle(3000)
         v = view()
-        check(v["z"] >= fine_zoom + 0.55 and abs(v["lng"] - fine[1]["center"][0]) < 0.04 and abs(v["lat"] - fine[1]["center"][1]) < 0.04
+        check(v["z"] >= fine_zoom + 0.55 and abs(v["lng"] - fine0[1]["center"][0]) < 0.04 and abs(v["lat"] - fine0[1]["center"][1]) < 0.04
               and "(native)" in page.inner_text("#roRes"),
-              f"a click beside a square goes to {fine[1]['name']} (zoom {v['z']:.2f}, {page.inner_text('#roRes')})")
-        page.evaluate("([lng, lat]) => window.__portal.map.jumpTo({center: [lng, lat], zoom: 9.2})", fine[2]["center"])
+              f"a click beside a square goes to {fine0[1]['name']} (zoom {v['z']:.2f}, {page.inner_text('#roRes')})")
+        page.evaluate("([lng, lat]) => window.__portal.map.jumpTo({center: [lng, lat], zoom: 9.2})", fine0[2]["center"])
         settle(1200)
         hint = page.inner_text("#roRes")
-        page.mouse.click(*xy(*fine[2]["center"]))
+        page.mouse.click(*xy(*fine0[2]["center"]))
         settle(3000)
         v = view()
-        check("zoom in for 30 m" in hint and v["z"] >= fine_zoom + 0.55 and abs(v["lng"] - fine[2]["center"][0]) < 0.04 and "(native)" in page.inner_text("#roRes"),
-              f"at the regional view the readout says '{hint}', and a click inside the outline goes to {fine[2]['name']} (zoom {v['z']:.2f})")
-        page.evaluate("([lng, lat]) => window.__portal.map.jumpTo({center: [lng, lat], zoom: 7.6})", fine[0]["center"])
+        check("zoom in for 30 m" in hint and v["z"] >= fine_zoom + 0.55 and abs(v["lng"] - fine0[2]["center"][0]) < 0.04 and "(native)" in page.inner_text("#roRes"),
+              f"at the regional view the readout says '{hint}', and a click inside the outline goes to {fine0[2]['name']} (zoom {v['z']:.2f})")
+        page.evaluate("([lng, lat]) => window.__portal.map.jumpTo({center: [lng, lat], zoom: 7.6})", fine0[0]["center"])
         settle(900)
         near = tags()
-        check(all(t["shown"] and not t["compact"] and t["w"] > 40 for t in near) and page.inner_text(".fine-tag") != "",
+        # from zoom 7 an area is a name tag — except where a neighbour's tag would lie on it: those wait until the map parts them
+        check(all(t["shown"] and t["compact"] == (7.6 < f["tagZoom"]) and (t["compact"] or t["w"] > 40) for t, f in zip(near, fine)) and page.inner_text(".fine-tag") != "",
               f"closer in the squares become name tags: {[t['text'] for t in near][:4]} …")
         page.screenshot(path=str(shots / "02b_area_tags.png"))
+    if fine:
+        # Labels never lie on one another: two name tags, or a city name and an area's mark (square or tag). Looked at
+        # around the areas that stand closest together, from the squares to the tags.
+        CLASH = """() => { const box = window.__portal.map.getContainer().getBoundingClientRect();
+            const r = (e) => { const b = e.getBoundingClientRect(); return [b.left, b.top, b.right, b.bottom]; };
+            const seen = (b) => b[2] > box.left && b[0] < box.right && b[3] > box.top && b[1] < box.bottom, hit = (a, b) => a[0] < b[2] && b[0] < a[2] && a[1] < b[3] && b[1] < a[3];
+            const tags = [...document.querySelectorAll('.fine-tag')].map((t, i) => ({name: window.__portal.fine[i].name, compact: t.classList.contains('compact'), on: getComputedStyle(t).display !== 'none', box: r(t)})).filter((t) => t.on && seen(t.box));
+            const cities = [...document.querySelectorAll('.city')].filter((c) => c.style.opacity === '1').map((c) => ({name: c.textContent, aside: c.classList.contains('aside'), box: r(c)})).filter((c) => seen(c.box));
+            const out = [];
+            tags.forEach((a, i) => tags.slice(i + 1).forEach((b) => { if (!a.compact && !b.compact && hit(a.box, b.box)) out.push(a.name + ' / ' + b.name); }));
+            for (const c of cities) for (const t of tags) if (hit(c.box, t.box)) out.push('city ' + c.name + ' / ' + t.name);
+            return {clash: out, tags: tags.map((t) => t.name + (t.compact ? ' (square)' : '')), aside: cities.filter((c) => c.aside).map((c) => c.name)}; }"""
+        tight = max(fine, key=lambda f: f["tagZoom"])
+        group = [f["name"] for f in fine if abs(f["tagZoom"] - tight["tagZoom"]) < 1e-6]
+        seen, moved = [], set()
+        for z in (5.8, 6.6, 7.3, tight["tagZoom"] - 0.15, tight["tagZoom"] + 0.05, 9.0, 10.2):
+            page.evaluate("([lng, lat, z]) => window.__portal.map.jumpTo({center: [lng, lat], zoom: z})", [*tight["center"], z])
+            settle(700)
+            c = page.evaluate(CLASH)
+            moved.update(c["aside"])
+            seen.append((z, c))
+        before, after = seen[3][1], seen[4][1]
+        if tight["tagZoom"] > 7.001:
+            check(all(f"{n} (square)" in before["tags"] for n in group) and all(n in after["tags"] for n in group),
+                  f"areas that stand close together ({', '.join(group)}) stay squares until their tags have room and change together, at zoom {tight['tagZoom']:.2f}")
+        check(not any(c["clash"] for _, c in seen),
+              "no name tag lies on another and no city name under a mark, from the squares to the tags"
+              + (f" (moved aside on the way: {', '.join(sorted(moved))})" if moved else "") + "".join(f"; zoom {z:.2f}: {c['clash']}" for z, c in seen if c["clash"]))
+        page.screenshot(path=str(shots / "02c_close_areas.png"))
         page.click("#btnHome")
         settle(2200)
     else:
@@ -334,14 +371,15 @@ with sync_playwright() as pw:
         page.evaluate("window.__portal.map.jumpTo({zoom: 10.6})")
         settle(1200)
         n = note()
-        check(n["kind"] == "finest" and n["shown"] and "finest level here" in n["text"] and "30 m" in n["text"] and len(n["buttons"]) == min(3, len(fine))
+        check(n["kind"] == "finest" and n["shown"] and "finest level here" in n["text"] and "30 m" in n["text"]
+              and len(n["buttons"]) == (min(3, len(fine0)) if fine0 else 1 if fine else 0)
               and (not info["paper"] or not fine or info["paper"] in n["text"]),
               "past the finest level a note says so: " + " ".join(n["text"].split())[:260])
         page.screenshot(path=str(shots / "04_finest_note.png"))
         page.click("#znClose")
         page.wait_for_timeout(200)
         check(not note()["shown"], "the note closes")
-        if fine:
+        if fine0:
             # a sample area: the note's button goes there, and there the copy is at the native 30 m
             page.evaluate("window.__portal.map.jumpTo({zoom: 9.2})")        # leave the situation, so the closed note may come back
             page.wait_for_timeout(400)
@@ -349,7 +387,7 @@ with sync_playwright() as pw:
             settle(900)
             # the note offers the nearest areas, nearest first
             c0, names = view(), note()["buttons"]
-            by_dist = sorted(fine, key=lambda f: math.hypot((f["center"][0] - c0["lng"]) * math.cos(math.radians(c0["lat"])), f["center"][1] - c0["lat"]))
+            by_dist = sorted(fine0, key=lambda f: math.hypot((f["center"][0] - c0["lng"]) * math.cos(math.radians(c0["lat"])), f["center"][1] - c0["lat"]))
             check(names == [f"{f['name']} · 30 m" for f in by_dist[:3]], f"the note offers the nearest areas: {names}")
             page.click("#znBtns button:first-child")
             settle(3000)
@@ -551,6 +589,30 @@ with sync_playwright() as pw:
                   and (R["fine"] or not others or "30 m sample areas" in n["buttons"][0]),
                   f"{R['name']}: past the finest level the note says so" + (f" and points to the region that has sample areas: {n['buttons']}" if not R["fine"] and others else ""))
             page.screenshot(path=str(shots / f"21_region_{R['id']}_finest.png"))
+            mine = [f for f in fine if f["region"] == R["id"]]
+            if mine:
+                # its own sample areas: the note speaks of this region's and offers its nearest; the "Go to" list
+                # takes the visitor to one, and a spot clicked there is a 30 m pixel of this region
+                c0 = view()
+                by_dist = sorted(mine, key=lambda f: math.hypot((f["center"][0] - c0["lng"]) * math.cos(math.radians(c0["lat"])), f["center"][1] - c0["lat"]))
+                check(n["buttons"] == [f"{f['name']} · 30 m" for f in by_dist[:3]] and R["the"] in n["text"] and not any(o["the"] in n["text"] for o in regions if o["id"] != R["id"]),
+                      f"{R['name']}: the note speaks of this region's sample areas and offers the nearest: {n['buttons']}")
+                f0 = mine[-1]
+                page.select_option("#jump", value=f"fine:{fine.index(f0)}")
+                settle(3400)
+                v = view()
+                check(fine_zoom + 0.55 <= v["z"] <= fine_zoom + 1.55 and abs(v["lng"] - f0["center"][0]) < 0.04 and abs(v["lat"] - f0["center"][1]) < 0.04
+                      and "(native)" in page.inner_text("#roRes") and not note()["shown"] and page.evaluate("window.__portal.focus.id") == R["id"],
+                      f"{R['name']}: the 'Go to' list goes to {f0['name']} with its pixels in view (zoom {v['z']:.2f}, {page.inner_text('#roRes')})")
+                page.mouse.click(*xy(*f0["center"]))
+                page.wait_for_timeout(600)
+                page.wait_for_function("!document.querySelector('#srSub').textContent.startsWith('Reading')", timeout=30000)
+                page.wait_for_function("!document.querySelector('#recordBox').hidden && document.querySelector('#rcSub').textContent.includes('had a clear observation')", timeout=180000)
+                csv_text, rows = record_csv()
+                head = csv_text.splitlines()[:2]
+                check(page.text_content("#srKicker") == "30 m pixel" and "(30 m pixel)" in head[0] and R["name"] in head[0] and "cell" not in head[1] and len(rows) == R["built"] + 1,
+                      f"{R['name']}: inside a sample area a clicked spot is a {page.text_content('#srKicker')} and its CSV says so: {head[0][head[0].index('('):]}")
+                page.screenshot(path=str(shots / f"22_region_{R['id']}_sample_area.png"))
         if R["mask"]:      # a place inside the region's bounding box that its maps do not cover is not the region's
             hits = page.evaluate("""(b) => { const p = window.__portal, f = 0.03, w = b[2] - b[0], h = b[3] - b[1];
                 return [[b[0] + f * w, b[1] + f * h], [b[2] - f * w, b[1] + f * h], [b[0] + f * w, b[3] - f * h], [b[2] - f * w, b[3] - f * h], [(b[0] + b[2]) / 2, (b[1] + b[3]) / 2]]

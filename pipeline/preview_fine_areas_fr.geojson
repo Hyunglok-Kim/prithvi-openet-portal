@@ -1,0 +1,18 @@
+{
+  "type": "FeatureCollection",
+  "note": "France: areas that a reduced public copy of the tiles shows at the native 30 m (make_preview_copy.py --fine, with --src the region's folder). They are the eleven French flux-tower sites of the paper's tower network: each ring is the 224 x 224 pixel (6.72 km) input chip around one site, converted from UTM zone 30N or 31N. The Korean Peninsula's areas are in preview_fine_areas.geojson.",
+  "what": "around the paper's French flux-tower sites",
+  "features": [
+    {"type": "Feature", "properties": {"id": "aurade", "name": "Auradé", "about": "cropland west of Toulouse"}, "geometry": {"type": "Polygon", "coordinates": [[[1.06352, 43.5793], [1.14671, 43.58068], [1.14856, 43.5202], [1.06545, 43.51883], [1.06352, 43.5793]]]}},
+    {"type": "Feature", "properties": {"id": "bilos", "name": "Bilos", "about": "evergreen needleleaf forest in the Landes"}, "geometry": {"type": "Polygon", "coordinates": [[[-0.99747, 44.52458], [-0.91296, 44.52307], [-0.91512, 44.46261], [-0.99954, 44.46412], [-0.99747, 44.52458]]]}},
+    {"type": "Feature", "properties": {"id": "lautaret", "name": "Col du Lautaret", "about": "mountain grassland in the Alps"}, "geometry": {"type": "Polygon", "coordinates": [[[6.36961, 45.07277], [6.45482, 45.07023], [6.45119, 45.00984], [6.36606, 45.01239], [6.36961, 45.07277]]]}},
+    {"type": "Feature", "properties": {"id": "estrees-mons", "name": "Estrées-Mons", "about": "cropland in Picardy"}, "geometry": {"type": "Polygon", "coordinates": [[[2.97382, 49.90231], [3.0674, 49.9023], [3.06731, 49.84186], [2.97385, 49.84187], [2.97382, 49.90231]]]}},
+    {"type": "Feature", "properties": {"id": "barbeau", "name": "Fontainebleau-Barbeau", "about": "deciduous broadleaf forest southeast of Paris"}, "geometry": {"type": "Polygon", "coordinates": [[[2.73451, 48.50657], [2.82549, 48.50674], [2.82569, 48.44629], [2.73482, 48.44612], [2.73451, 48.50657]]]}},
+    {"type": "Feature", "properties": {"id": "grignon", "name": "Grignon", "about": "cropland west of Paris"}, "geometry": {"type": "Polygon", "coordinates": [[[1.9053, 48.87412], [1.99693, 48.87495], [1.99814, 48.81451], [1.90662, 48.81368], [1.9053, 48.87412]]]}},
+    {"type": "Feature", "properties": {"id": "hesse", "name": "Hesse", "about": "deciduous broadleaf forest in Lorraine"}, "geometry": {"type": "Polygon", "coordinates": [[[7.02149, 48.70573], [7.1126, 48.7025], [7.10769, 48.64221], [7.01669, 48.64542], [7.02149, 48.70573]]]}},
+    {"type": "Feature", "properties": {"id": "lamasquere", "name": "Lamasquère", "about": "cropland southwest of Toulouse"}, "geometry": {"type": "Polygon", "coordinates": [[[1.19553, 43.52609], [1.27865, 43.52737], [1.28036, 43.46689], [1.19733, 43.46561], [1.19553, 43.52609]]]}},
+    {"type": "Feature", "properties": {"id": "mejusseaume", "name": "Méjusseaume", "about": "grassland west of Rennes"}, "geometry": {"type": "Polygon", "coordinates": [[[-1.84068, 48.14908], [-1.75035, 48.14813], [-1.75182, 48.08769], [-1.84204, 48.08863], [-1.84068, 48.14908]]]}},
+    {"type": "Feature", "properties": {"id": "puechabon", "name": "Puéchabon", "about": "evergreen broadleaf forest northwest of Montpellier"}, "geometry": {"type": "Polygon", "coordinates": [[[3.55442, 43.77183], [3.63791, 43.77139], [3.63727, 43.71089], [3.55386, 43.71132], [3.55442, 43.77183]]]}},
+    {"type": "Feature", "properties": {"id": "toulouse", "name": "Toulouse", "about": "grassland on the southwestern edge of the city"}, "geometry": {"type": "Polygon", "coordinates": [[[1.33226, 43.60244], [1.41549, 43.60363], [1.41708, 43.54314], [1.33393, 43.54196], [1.33226, 43.60244]]]}}
+  ]
+}

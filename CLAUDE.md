@@ -13,7 +13,8 @@ before changing anything.
 (https://hyunglok-kim.github.io/prithvi-openet-portal/) and embedded on https://hydroai.net/data#et.
 Two regions have maps: the Korean Peninsula (since 2026-11-15) and France, the mainland and Corsica
 (since 2026-11-21). The public site reads a **reduced copy** of the browse tiles — zoom 3–10, about
-120 m, plus the native 30 m inside eight small areas around the paper's Korean flux-tower sites —
+120 m, plus the native 30 m inside nineteen small areas around the paper's flux-tower sites (eight
+on the Korean Peninsula, eleven in France) —
 from tile repositories on GitHub Pages (three for the Korean Peninsula, seven for France), because
 GitHub Pages cannot hold the full sets (17.6 GB and 49.8 GB) and because the full 30 m maps are
 released after the paper is accepted; the full sets are served only inside the lab. A line at
@@ -35,7 +36,8 @@ pipeline/           tile and catalog builders (Python + GDAL), run where the Geo
                     make_coverage_map.py draws the coverage picture from the tiles;
                     make_background.py turns a coarse global field into the background layer;
                     make_preview_copy.py makes the reduced copy of the tiles that the public site reads,
-                    preview_fine_areas.geojson names the areas that copy keeps at 30 m
+                    preview_fine_areas.geojson names the areas that copy keeps at 30 m (the Korean
+                    Peninsula's; preview_fine_areas_fr.geojson has France's)
 worker/             request-form backend (Cloudflare Worker): src/index.js, wrangler.toml, test.mjs
 tests/smoke.py      headless-browser test (Playwright); tile_ref.json holds tile checksums to compare against
 dev_server.py       local preview with HTTP Range support
@@ -255,10 +257,14 @@ When the view has gone past what is published at a place, a note appears at the 
   then covered the button of the request popup that the next click opens). "Without maps of ours" goes by the regions' masks, so the note also
   comes up in Geneva or Milan, which lie inside the box of France's grid.
 - **finest** — zoomed past the finest level of a reduced copy, outside its sample areas: 120 m
-  (110 m in France) is the finest level here for now, the native 30 m is shown only in the sample
-  areas (a catalog's `fine.what` says what they are); buttons go to the three nearest of that
-  region. A region without sample areas — France today — gets one button, to the region that has
-  them.
+  (110 m in France) is the finest level here for now, the native 30 m maps of that region are shown
+  only in its sample areas (so many, and what they are: the region's catalog says so in
+  `fine.what`); buttons go to the three nearest of that region. A region without sample areas
+  hears where the others' are and gets one button, to the nearest region that has them.
+
+A note is drawn again when what it says has changed, not only when its kind has (`noteSaid`): the
+nearest region, or the region and its three nearest areas. The view can move a long way inside one
+situation.
 
 `paperStatus` in `js/config.js` ("under review") supplies the clause "While the paper is …" and the
 status in the citation. Empty it at publication. The sentences are written so that each is true as
@@ -353,7 +359,8 @@ python pipeline/make_preview_copy.py --src /path/to/out --out /path/to/public \
     --fine pipeline/preview_fine_areas.geojson \
     --link fr=../prithvi-openet-tiles-fr-1/catalog.json      # needs pmtiles, numpy, Pillow; about two minutes
 python pipeline/make_preview_copy.py --src /path/to/out/fr --out /path/to/public \
-    --max-zoom 10 --volume-mb 900 --name prithvi-openet-tiles-fr
+    --max-zoom 10 --volume-mb 780 --name prithvi-openet-tiles-fr \
+    --fine pipeline/preview_fine_areas_fr.geojson
 ```
 
 - Tile bytes are copied untouched, so at zoom 3–10 the copy holds exactly the full set's numbers.
@@ -363,9 +370,11 @@ python pipeline/make_preview_copy.py --src /path/to/out/fr --out /path/to/public
   background layer), `-2`, `-3`. The catalog addresses the other two as
   `../prithvi-openet-tiles-2/monthly/…`, which works because the sites are neighbours on one
   host. `js/config.js` `dataBase` points at the first.
-- The French copy is 4.98 GB in seven folders of 390–780 MB, `prithvi-openet-tiles-fr-1` to
+- The French copy is 5.08 GB in seven folders of 400–790 MB, `prithvi-openet-tiles-fr-1` to
   `-7` (France is two and a half times the land, and a zoom-10 tile is smaller on the ground
-  at its latitude; a month is 7–48 MB). The first holds that region's catalog. The Korean
+  at its latitude; a month is 7–48 MB). Keep `--volume-mb 780`: it decides which month goes into
+  which folder, and the sample-area archives come on top of it (a GitHub Pages site may not
+  exceed 1 GB). The first holds that region's catalog. The Korean
   copy's catalog lists it (`--link`: the address of the other region's catalog as seen from the
   first folder), and that is the only tie between the two copies: either can be rebuilt without
   the other. A region left without a `--link` is left out of the copy's list, so a public catalog
@@ -380,13 +389,18 @@ python pipeline/make_preview_copy.py --src /path/to/out/fr --out /path/to/public
   the layer buttons, the third step of the resolution pill, the readout, the hint under the map,
   "120 m cell" instead of "30 m pixel" on the series, the CSV header, the About and Code text. A
   catalog without `zoom.native` is a full set and the page then goes down to 30 m.
-- **Sample areas (`--fine`).** `preview_fine_areas.geojson` holds the outlines of the areas that
-  keep the native zoom: the eight Korean flux-tower sites of the paper's tower network, each the
-  6.72 km input chip around one site (Cheorwon, Anmyeon, Paju, Hongcheon, Pyeongchang, Samcheok,
-  Yeoju, Wando; the first two are also the Korean scenes the paper shows as maps). Its `what` is a
-  few words on what the areas are, which the app puts into its sentences. For those areas, every
+- **Sample areas (`--fine`).** A file of outlines per region names the areas that keep the native
+  zoom. `preview_fine_areas.geojson`: the eight Korean flux-tower sites of the paper's tower
+  network, each the 6.72 km input chip around one site (Cheorwon, Anmyeon, Paju, Hongcheon,
+  Pyeongchang, Samcheok, Yeoju, Wando; the first two are also the Korean scenes the paper shows as
+  maps). `preview_fine_areas_fr.geojson`: the eleven French sites of the same network, the same
+  chips (Auradé, Bilos, Col du Lautaret, Estrées-Mons, Fontainebleau-Barbeau, Grignon, Hesse,
+  Lamasquère, Méjusseaume, Puéchabon, Toulouse; added 2026-11-21 on the lab head's word). No
+  other place is in either file, and none goes in without the lab head's word. A file's `what` is
+  a few words on what the areas are, which the app puts into its sentences. For those areas, every
   layer gets a second small archive beside the first, `X.fine.pmtiles`, with the zoom 11–12 tiles
-  that touch an area (7,376 tiles, 60 MB in all, about 7 MB an area). Inside an outline a tile
+  that touch an area (Korean Peninsula: 7,376 tiles, 60 MB in all, about 7 MB an area; France:
+  11,562 tiles, 102 MB, about 9 MB an area). Inside an outline a tile
   holds the full set's pixels; outside it, the copy's own zoom-10 cells enlarged — so nothing
   finer than 120 m leaves the outlines. The catalog lists the areas under `fine` and each layer
   names its archive under `fine`. In the app the ET source then goes to zoom 12: tiles that touch
@@ -394,16 +408,29 @@ python pipeline/make_preview_copy.py --src /path/to/out/fr --out /path/to/public
   (`finerDN`), which gives the same pixels. What a value stands for depends on where it was read
   (`nativeAt`, `cellNameAt`): a 30 m pixel inside an area, a 120 m cell anywhere else. On the map
   an area is an outline with a name tag; far out, where the tags would pile up, each is a small
-  square, explained by a line in the coverage card. The areas are also in the "Go to" list. Only
-  the maps are shown: nothing from the tower records, and no tower positions.
+  square, explained by a line in the coverage card. The areas are also in the "Go to" list, region
+  by region. Only the maps are shown: nothing from the tower records, and no tower positions.
+- **Labels are placed by arithmetic** (`tagRoom`, `markBox`, `placeCities`): a name tag comes in
+  at map zoom 7, but areas whose tags would lie on one another there stay squares until the map
+  has grown enough to part them, and then change together (Auradé, Lamasquère and Toulouse are 11
+  to 22 km apart: zoom 8.1). A city name that the mark of an area would cover — the square or the
+  tag — moves to the lower right of its place (`.city.aside`), and is not shown where that is
+  taken too: Toulouse has three areas just west of it, Rennes one. Nothing on the Korean Peninsula
+  is close enough for either rule to act.
+- **The public archives of France were built on the lab's server, the sample-area archives on a
+  Mac.** A rebuild elsewhere gives archives with the same tiles and the same size but two other
+  bytes (the "system" byte in the header of the two compressed blocks inside a PMTiles file,
+  which the Python version sets). So after a rebuild of that copy, compare before committing
+  (same size, `cmp -l` shows two bytes) and commit only what is new — the `.fine.pmtiles`, the
+  catalog, the README — instead of 5 GB of archives that say the same.
 - **Going to a sample area shows its pixels** (`goFine`): the tag, the "Go to" list, the note's
   buttons, a click on or just beside a square, or a click inside the outline at the regional view
   all fill the map with the area, at 3 screen pixels per native pixel or more (map zoom 12.6 to
   13.5; on a small map the area runs past the edges). At the regional view the readout over an
   area reads "120 m per pixel · zoom in for 30 m".
 - Adding the sample areas, the background or a link to another region does not change the 173
-  archives and their sidecars (the copy is deterministic), so a repository only gains or changes
-  its small files.
+  archives and their sidecars (the copy is deterministic on one machine; see above for another),
+  so a repository only gains or changes its small files.
 - After rebuilding tiles: run the script again into the same parent folder, then commit and push
   each of the folders. Pages redeploys in a minute or two. A new folder is a new repository:
   `gh repo create <owner>/<name> --public`, push, then switch Pages on for `main`, root
@@ -427,12 +454,16 @@ To preview a reduced copy before pushing it, serve its parent folder and name th
 The smoke test adapts to what it finds: with a full set it expects the second click to reach the
 native 30 m; with a reduced copy it expects the page to say so, to stop at the finest level and to
 bring up the note; with sample areas it expects 30 m there, holding the full set's numbers
-(`tile_ref.json` has a window inside each area); with a background it expects every value read
+(`tile_ref.json` has a window inside two areas of each region), the areas in the "Go to" list
+region by region, close neighbours as squares until their tags have room, and no city name under
+a mark; with a background it expects every value read
 from it to carry the product's name; with several regions it expects each to be named in the
 header, the coverage card and its picture, to have its mark in sight on the resting globe, and,
 for every region after the first, that its button fits it, the cards turn to it, a value of ours
-is under the cursor, a click gives the series of the spot, the mask and not the bounding box
-decides what is the region's, and the Download and Code tabs list its files and examples
+is under the cursor, a click gives the series of the spot, the note past the finest level speaks
+of that region's sample areas and the "Go to" list takes the visitor into one, the mask and not
+the bounding box decides what is the region's, and the Download and Code tabs list its files and
+examples
 (`tile_ref.json` has three tiles of France for the same byte-for-byte comparison). It also checks the opening (where the turn starts, that it
 ends on the globe view with the panels and the mark in place and none of its classes left), and
 in a phone-sized window that the globe fits its box, that the readout is clear of the legend, that
@@ -525,9 +556,10 @@ ET panel back. After an edit, check every card on the live page, not only your o
 silent loop and lists key facts and what the portal offers. Ours says "30 m, monthly",
 "April 2013 – August 2026, 160 monthly maps per region", "Korean Peninsula and France now; any
 other land area on request" and "Paper under review. Until it is accepted the maps are shown down
-to about 120 m, and at 30 m in eight sample areas". **Those words repeat this portal's own
+to about 120 m, and at 30 m in 19 sample areas". **Those words repeat this portal's own
 numbers: when the record, the regions, the sample areas or the paper's status change, change the
-card too** (France was added to it on 2026-11-21, the day its maps went up).
+card too** (France was added to it on 2026-11-21, the day its maps went up, and the count of
+sample areas went from eight to 19 the same day).
 
 Its loop (`et-v3`, since France went up) opens on the globe with ET over all land, comes down on
 France, goes across to the Korean Peninsula and into the Pyeongchang sample area at 30 m, in mean
@@ -570,10 +602,10 @@ Left:
    the second (2026-11-21). The buttons over the map and the resting view of the globe were laid
    out for two: with a third, look again at the room over the map (`.region-btn`, the container
    rules in `portal.css`) and at whether one view of the globe can still hold every mark.
-5. **Sample areas in France.** The public copy has none there: which areas go public at 30 m is the
-   lab head's decision (see the rules below), and it was asked when France went up. If they are to
-   be the paper's French flux-tower sites, as in Korea, the outlines go into a `--fine` file for
-   that region and its copy is rebuilt.
+5. **Sample areas for a further region** are the lab head's decision each time (see the rules
+   below). France's were asked when France went up and added the same day: the paper's eleven
+   French flux-tower sites, as on the Korean Peninsula. The outlines go into a `--fine` file for
+   the region and its copy is rebuilt.
 
 ## Rules that must survive any redesign
 
@@ -586,10 +618,11 @@ Left:
   notes on the map say what is published; they do not suggest that maps exist where none do.
 - **Ahead of the paper, 30 m only in the sample areas.** A public copy of the tiles holds nothing
   finer than zoom 10 (about 120 m; about 105 m in France) outside the outlines in
-  `pipeline/preview_fine_areas.geojson` — today the paper's eight Korean flux-tower sites, and
-  none in France. The sample-area tiles are built so that this is true
-  pixel by pixel; keep it that way. Which areas go in is the lab head's decision, not a
-  convenience.
+  `pipeline/preview_fine_areas.geojson` and `preview_fine_areas_fr.geojson` — today the paper's
+  eight Korean and eleven French flux-tower sites. The sample-area tiles are built so that this is
+  true pixel by pixel (checked for France over all 173 layers: every pixel inside an outline is
+  the full set's, every pixel outside it the zoom-10 cell enlarged); keep it that way. Which areas
+  go in is the lab head's decision, not a convenience.
 - **Flag extrapolation.** The model was trained on 2016–2024; months outside are marked in the layer
   card, the record calendar, the pixel chart, the Download table and the CSV.
 - **Never hide gaps.** A regional mean is a mean over observed pixels, so it is always shown next
@@ -734,6 +767,12 @@ Left:
 - **A wide region runs under the coverage card.** Fitting France in the middle of the map put
   Brittany behind the card. `fitRegion` fits a region beside the card when it would otherwise
   reach under it; a narrow one (the peninsula) stays in the middle as before.
+- **Sample areas can be neighbours.** The Korean ones are 35 km apart or more and their name tags
+  never met. Three of the French ones lie within 22 km of one another beside a city that is
+  labelled, one of them with that city's name: at zoom 7 their tags lay on one another and on the
+  city's name. Hence `tagRoom` and `placeCities`.
+- **A note that stays up went stale.** It was drawn when its kind changed and not again, so after
+  a long move at one zoom it still offered the three areas nearest to where it had come up.
 
 ## Not done yet
 

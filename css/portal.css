@@ -232,6 +232,8 @@ html.entered .side .card:nth-of-type(3) { animation-delay: .39s; }
 .pop .primary { margin-top: 2px; }
 .maplibregl-popup-content { border-radius: 10px; padding: 12px 14px; box-shadow: 0 4px 18px rgba(0,0,0,.25); }
 .city { font: 500 11.5px/1 var(--font-ui); color: #fff; text-shadow: 0 0 3px rgba(0,0,0,.95), 0 0 6px rgba(0,0,0,.7); pointer-events: none; white-space: nowrap; transition: opacity .2s; }
+/* A name that the mark of a sample area would cover stands to the lower right of its place instead (placeCities in app.js). */
+.city.aside { display: inline-block; transform: translate(calc(50% + 6px), 19px); }
 .pulse { width: 14px; height: 14px; border-radius: 50%; background: #F4C9B8; border: 2px solid var(--accent-solid); box-shadow: 0 0 0 0 rgba(217,119,87,.6); animation: pulse 2s ease-out infinite; }
 .pulse-label { position: absolute; left: 22px; top: -1px; white-space: nowrap; font: 600 12px/1.2 var(--font-ui); color: #fff; text-shadow: 0 0 4px rgba(0,0,0,.9); }
 .pulse-label.to-left { left: auto; right: 22px; }      /* the mark of a region east of where the globe faces: its label points to the middle of the globe */
