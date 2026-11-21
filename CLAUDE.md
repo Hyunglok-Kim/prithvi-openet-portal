@@ -448,6 +448,7 @@ python dev_server.py --data /path/to/tiles          # serves the tiles at /data/
 python tests/smoke.py --base "http://127.0.0.1:8791/?data=/data/" --shots /tmp/shots --ref tests/tile_ref.json
 python tests/smoke.py --browser webkit --base "http://127.0.0.1:8791/?data=/data/" --shots /tmp/shots-safari --ref tests/tile_ref.json
 python tests/smoke.py --base https://hyunglok-kim.github.io/prithvi-openet-portal/ --shots /tmp/shots-public --ref tests/tile_ref.json
+python tests/card_click.py                          # the lab site: click the dataset card, watch the opening in four windows
 node --test worker/test.mjs
 ```
 
@@ -677,7 +678,10 @@ Left:
   1440 px and 2048 px or more (the lab head's display) before calling a layout change done.
 - **The opening is judged where visitors meet it: on the lab site, after a click on the dataset
   card.** Look at it inside that page's frame, at a laptop height (about 800 px) as well as on a
-  large screen, not only at the portal's own address in a tall window.
+  large screen, not only at the portal's own address in a tall window. `tests/card_click.py` does
+  that on the live Data page (or a local copy of it): it clicks the card and says for each window
+  whether the turn started by itself or waited for a scroll, and that it ended on the globe view
+  with nothing left behind. Run it after any change to the hub page as well, whoever made it.
 - **Never leave a visitor on the loading screen.** The map needs WebGL and cannot be drawn without
   it. Where the browser gives no context (`webglWorks()`), or the map fails to start, or its context
   is lost and has not come back after `LOST_WAIT`, `noMap()` puts a message where the map would be
