@@ -480,6 +480,14 @@ graphics card is busy with other work it loses its contexts ("WebGL: context los
 screen times out), and so does every other map page there. That failure is the machine, not the
 page; check that another map site opens in the same browser before looking for a bug.
 
+Against the public site, run one engine at a time, and not in the first minutes after a push to
+the tile repositories. On 2026-11-21 Chromium and Firefox were started together a minute after
+France's new catalog had gone up, and both stopped at the same step: the full record of a spot
+inside a French sample area did not arrive within the three minutes the test gives it. Each passed
+when run alone a little later, and three browsers reading such records at once were then served
+in a few seconds without a failed request. Which of the two it was — the host's copies still
+settling, or the load of two test runs — was not found out.
+
 `python -m http.server` will not do: PMTiles needs HTTP Range requests. When a copy sits behind a
 session cookie, pass it to the smoke test as `SMOKE_COOKIE="name=value"`.
 
