@@ -523,23 +523,29 @@ ET panel back. After an edit, check every card on the live page, not only your o
 
 **The hub card (since 2026-11-17).** On that page's hub each dataset card opens with a short
 silent loop and lists key facts and what the portal offers. Ours says "30 m, monthly",
-"April 2013 – August 2026, 160 monthly maps", "Korean Peninsula now; any other land area on
-request" and "Paper under review. Until it is accepted the maps are shown down to 120 m, and at
-30 m in eight sample areas". **Those words repeat this portal's own numbers: when the record, the
-coverage, the sample areas or the paper's status change, change the card too.**
+"April 2013 – August 2026, 160 monthly maps per region", "Korean Peninsula and France now; any
+other land area on request" and "Paper under review. Until it is accepted the maps are shown down
+to about 120 m, and at 30 m in eight sample areas". **Those words repeat this portal's own
+numbers: when the record, the regions, the sample areas or the paper's status change, change the
+card too** (France was added to it on 2026-11-21, the day its maps went up).
 
-Its loop (`et-v2`) opens on the globe with ET over all land, comes down to the Korean Peninsula
-and goes into the Pyeongchang sample area at 30 m, in mean annual ET. That is the lab head's
-word of the same day: the first version showed only our own maps on the globe (the background
-layer switched off) and went into Anmyeon; "show the map with global ET laid on it first, and
-Pyeongchang for the 30 m part". The loop is drawn as this portal draws it, from the public copy
+Its loop (`et-v3`, since France went up) opens on the globe with ET over all land, comes down on
+France, goes across to the Korean Peninsula and into the Pyeongchang sample area at 30 m, in mean
+annual ET. The loop before it (`et-v2`) went from the globe straight to the peninsula. That shape
+is the lab head's word of 2026-11-17: the first version showed only our own maps on the globe
+(the background layer switched off) and went into Anmyeon; "show the map with global ET laid on
+it first, and Pyeongchang for the 30 m part". The loop is drawn as this portal draws it, from the public copy
 of the tiles, so outside the Korean Peninsula its colours are the background layer — another
 product. The card names it on the picture in its first caption ("Global background: MODIS ET
-(MOD16A2GF)", shown while the globe is in view and on the still picture). Keep that caption
-whenever the card is re-worded: it is the rule "the background is never passed off as ours"
-applied to a picture. **In pictures of this dataset the lab head wants the global ET on the
+(MOD16A2GF)", shown while the globe is in view — three times in `et-v3` — and on the still
+picture). Keep that caption whenever the card is re-worded or the loop re-timed: it is the rule
+"the background is never passed off as ours" applied to a picture. A region's caption starts when
+the region fills the frame, not while the globe with the background is still most of the picture. **In pictures of this dataset the lab head wants the global ET on the
 globe, named — not the globe left bare.** The pictures and the scripts that make them are in the
-HDCA portal's repository (`embed/media/`, `embed/tools/` with a README).
+HDCA portal's repository (`embed/media/`, `embed/tools/` with a README; `cap_et_v3.py` draws this
+loop from a local preview of this portal on the public copy of both regions). **An old loop's
+files are not ours alone to remove**: the reel on the lab site's home page plays loops from that
+folder (`et-v2` until its own entry was changed), so ask the home-page session first.
 
 For a few hours the picture also carried a credit line at its top ("Background ET: MOD16A2GF
 (NASA) · Imagery © Esri, Maxar, Earthstar Geographics"), which kept the name on screen through
