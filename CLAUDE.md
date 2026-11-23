@@ -31,7 +31,10 @@ js/config.js        deployment settings (data location, public GeoTIFF address, 
 js/app.js           the app (MapLibre GL + PMTiles + SVG charts), one IIFE, no build step
 assets/             land-50m.json — Natural Earth land, cut at the antimeridian (public domain)
                     coverage-world.svg — the small world map in the coverage card (a generated file)
-                    logos/ — the two marks in the logo strip at the bottom
+                    logos/ — the marks in the logo strip at the bottom: HydroAI, GIST and NASA (NASA added
+                    2026-11-23 at the PI's word, "콜라보레이터 나사야"; NASA.png is drawn from the insignia
+                    nasa.gov serves, /wp-content/themes/nasa/assets/images/nasa-logo.svg). The Data page's logo
+                    bar under the ET panel repeats the strip: change both
 pipeline/           tile and catalog builders (Python + GDAL), run where the GeoTIFFs live, one region per run;
                     make_coverage_map.py draws the coverage picture from the tiles;
                     make_background.py turns a coarse global field into the background layer;
