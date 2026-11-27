@@ -63,8 +63,10 @@ any static host with HTTP Range support → browser
 ## Regions
 
 A region is one stretch of land with ready-made maps, made from one set of GeoTIFFs on one grid.
-Today: `kp`, the Korean Peninsula (EPSG:5179, files `KP_…`), and `fr`, France (EPSG:2154, files
-`FR_…`). Everything about a region is in **its own catalog**, and nothing in the app names one.
+Today: `kp`, the Korean Peninsula (EPSG:5179, files `KP_…`), `fr`, France (EPSG:2154, files
+`FR_…`), and `carmel`, a box around the Carmel River watershed in California (EPSG:32610, files
+`CARMEL_…`; see "A region made on request" below). Everything about a region is in **its own
+catalog**, and nothing in the app names one.
 
 - **Where things are.** The first region's tiles sit at the top of the tile set (`catalog.json`,
   `monthly/`, `clim/`, and the background). Every other region has a folder inside it, named by
@@ -96,6 +98,31 @@ Today: `kp`, the Korean Peninsula (EPSG:5179, files `KP_…`), and `fr`, France 
   above the cards ("Region"), the "Go to" list; the lists in the Download and Code tabs change the
   focus without moving the map. `view=<id>` in the address opens on a region.
 - **The globe faces all of them.** See "The opening globe".
+
+**A region made on request.** `carmel` (added 2026-11-27) is the first region made for someone who asked
+for one: twelve months, October 2024 to September 2025, at 30 m, on the grid of its UTM zone. Two things
+set it apart, both written into its catalog by `make_catalog.py`:
+- `record.clim` (`--clim-period 2024-10,2025-09`): the months its climatology and annual layers are made
+  of. Without it they are the training years (2016–2024) and the layers are means; with one year they are
+  that year's maps and that year's total. `climSpan(R)` in `app.js` turns it into words, and everything that
+  describes those layers follows the region in focus: the layer labels ("Annual ET, Oct 2024 – Sep 2025",
+  "July 2025"), the "Annual mean" button (it reads "Annual total" there), the card, the seasonal-cycle chart
+  (one line, the year itself, instead of a year against a mean) and the series at a clicked spot. The
+  training-period flag of a month is the model's and stays as it is: 2024's three months are inside it,
+  2025's nine are extrapolations. Its climatology is built with `run_layers.sh clim 2024-2025`
+  (`build_clim.py` skips the months that do not exist).
+- `region.kind` = `request` (`--region-kind request`): the first catalog lists such regions after the
+  others, so buttons and sentences name the large ones first.
+- The resting globe does not turn for it: `faceRegions()` leaves out the smallest region until the others
+  lie within 150° of longitude, so the globe still faces the Korean Peninsula and France (65.4°E) and the
+  Carmel River mark rests on the far side. It is reached from its button, "Go to" and the coverage card.
+- Its source is a request folder in the lab's archive, laid out differently (`maps/CARMEL_ET30m_YYYYMM.tif`)
+  and named after the person who asked. On the server `src/carmel/` holds links in the layout the pipeline
+  expects and a `SHA256SUMS` with those paths, so no file name, path or catalog field carries the name.
+  **Nothing public names the person who asked**: not the catalogs, the repositories, this file or the page.
+- No 30 m sample areas: the paper has none there, and the public copy stops at zoom 10 (about 120 m).
+- The notes about what is published name the regions once, in the title: with three regions the body's
+  repeat of the list made the note tall enough to cover the "Request this area" button of the popup.
 
 To add a region: build its tiles and catalog (`REGION=<id>`, "Building tiles"), rebuild the first
 catalog so that it lists the new one, re-make the background with one more `--hide` (it must not
@@ -373,6 +400,13 @@ python pipeline/make_preview_copy.py --src /path/to/out/fr --out /path/to/public
   background layer), `-2`, `-3`. The catalog addresses the other two as
   `../prithvi-openet-tiles-2/monthly/…`, which works because the sites are neighbours on one
   host. `js/config.js` `dataBase` points at the first.
+- The Carmel River copy is one folder of 10 MB, `prithvi-openet-tiles-carmel-1` (25 archives, no sample
+  areas). The Korean copy's catalog links it after France: `--link fr=… --link carmel=../prithvi-openet-tiles-carmel-1/catalog.json`.
+  When it was added the Korean copy was rebuilt on the server into a fresh folder and only its
+  `catalog.json` and background archive were taken: its month archives came out two bytes apart (the
+  gzip header, see below) and its `.fine.pmtiles` 1–3 % larger (the server's Pillow and zlib encode the
+  composed 30 m tiles differently from the Mac's that made the published ones; the catalog does not
+  record their sizes), so the published archives stay as they are.
 - The French copy is 5.08 GB in seven folders of 400–790 MB, `prithvi-openet-tiles-fr-1` to
   `-7` (France is two and a half times the land, and a zoom-10 tile is smaller on the ground
   at its latitude; a month is 7–48 MB). Keep `--volume-mb 780`: it decides which month goes into

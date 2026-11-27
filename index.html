@@ -82,7 +82,7 @@
         <div class="map-ui map-tl" id="coverCard">
           <p class="mini-h">Coverage</p>
           <!-- A fixed picture, made by pipeline/make_coverage_map.py from the tiles: regions with data in colour, all other land grey. -->
-          <img class="cov-map" id="covMap" src="assets/coverage-world.svg?v=20261121a" width="720" height="316" draggable="false"
+          <img class="cov-map" id="covMap" src="assets/coverage-world.svg?v=20261127a" width="720" height="316" draggable="false"
                alt="World map. The Korean Peninsula is coloured and ringed; all other land is grey." />
           <p class="cov-row"><span class="sw sw-avail"></span><span><b>Available now</b> · <span id="covRegions">Korean Peninsula</span></span></p>
           <p class="cov-row"><span class="sw sw-demand"></span><span><b>On request</b> · any other land area</span></p>
@@ -285,6 +285,7 @@
       <li>A pixel with no clear-sky observation in a month is left empty. Nothing is gap-filled.</li>
       <li data-for-region="kp">Korean Peninsula: South and North Korea were processed separately and merged on one 30 m grid (EPSG:5179).</li>
       <li data-for-region="fr" hidden>France: the mainland and Corsica were processed as one region on the Lambert-93 grid (EPSG:2154); the overseas territories are not included. The correction for MERRA-2 grid cells uses the constant fitted for the Korean maps.</li>
+      <li data-for-region="carmel" hidden>Carmel River area: made on request in November 2026 for a box around the Carmel River watershed on the central coast of California (121.92–121.33°W, 36.17–37.55°N, land only; the box reaches north beyond the watershed), October 2024 to September 2025, on the UTM zone 10N grid (EPSG:32610).</li>
     </ul>
 
     <h3 id="ab-read">Read this before you use the numbers</h3>
@@ -292,11 +293,12 @@
       <li id="abPreview" hidden></li>
       <li id="abBg" hidden></li>
       <li><b>Training period.</b> The model was trained on 2016–2024. Months before 2016 and after 2024 are extrapolations in time and are marked as such on this site and in each file.</li>
-      <li><b>Gaps.</b> Empty pixels are common in 2013–2015, when only Landsat was available. <span data-for-region="kp">Since then they come mostly with the summer monsoon on the Korean Peninsula. </span><span data-for-region="fr" hidden>In France they come mostly in late autumn and winter. </span>A regional mean covers only the pixels that were observed, so read it together with the share of land observed.</li>
+      <li><b>Gaps.</b> Empty pixels are common in 2013–2015, when only Landsat was available. <span data-for-region="kp">Since then they come mostly with the summer monsoon on the Korean Peninsula. </span><span data-for-region="fr" hidden>In France they come mostly in late autumn and winter. </span><span data-for-region="carmel" hidden>In the Carmel River area nearly every land pixel has a value in every month. </span>A regional mean covers only the pixels that were observed, so read it together with the share of land observed.</li>
       <li><b>30 m is the grid, not the accuracy.</b> Accuracy at single pixels and single fields has not been verified, and many Korean fields are smaller than a pixel.</li>
       <li data-for-region="kp"><b>North Korea.</b> There are no flux towers to check the estimates against.</li>
+      <li data-for-region="carmel" hidden><b>Carmel River area.</b> One year of maps, made on request. The estimates have not been checked against measurements there, and its annual layer is that year's total, not a long-term mean.</li>
       <li><b>Model spread is not total uncertainty.</b> Band 2 shows only how much the nine models disagree.</li>
-      <li><b>Missing month.</b> <span id="abMissing">September 2025</span> was not produced because an input was unavailable.</li>
+      <li><b>Missing month.</b> <span id="abMissing">September 2025</span> is missing from the Korean Peninsula and France: an input was unavailable when their maps were made.</li>
     </ul>
 
     <h3 id="ab-demand">Other regions, on request</h3>
@@ -424,6 +426,6 @@
 <script src="https://unpkg.com/maplibre-gl@5.24.1/dist/maplibre-gl.js"></script>
 <script src="https://unpkg.com/pmtiles@4.5.0/dist/pmtiles.js"></script>
 <script src="js/config.js?v=20261115n"></script>
-<script src="js/app.js?v=20261121b"></script>
+<script src="js/app.js?v=20261127a"></script>
 </body>
 </html>

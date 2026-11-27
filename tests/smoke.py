@@ -159,7 +159,7 @@ with sync_playwright() as pw:
     strip = page.evaluate("""() => { const f = document.querySelector('.logos-footer'), im = [...f.querySelectorAll('img')];
         return {shown: getComputedStyle(f).display !== 'none', n: im.length, loaded: im.every((i) => i.complete && i.naturalWidth > 0),
                 noindex: !!document.querySelector('meta[name=robots]')}; }""")
-    check(strip["shown"] and strip["n"] == 2 and strip["loaded"] and not strip["noindex"], f"logo strip shown with {strip['n']} logos; page is indexable")
+    check(strip["shown"] and strip["n"] == 3 and strip["loaded"] and not strip["noindex"], f"logo strip shown with {strip['n']} logos; page is indexable")
     # the line at the very top: where the paper stands and when the data will be released (not on the lab's internal copy)
     if info["notice"]:
         pn = page.evaluate("""() => { const n = document.querySelector('#pageNotice'), r = n.getBoundingClientRect(), h = document.querySelector('header.top').getBoundingClientRect();
@@ -475,11 +475,21 @@ with sync_playwright() as pw:
             const arc = Math.acos(Math.sin(lat * rad) * Math.sin(c.lat * rad) + Math.cos(lat * rad) * Math.cos(c.lat * rad) * Math.cos((lon - c.lng) * rad)) / rad;
             return {id: R.id, arc, shown: getComputedStyle(w).display !== 'none' && +getComputedStyle(w).opacity > 0.9, x: r.left + 7 - box.left, y: r.top + 7 - box.top,
                     label: [l.left - box.left, l.top - box.top, l.right - box.left, l.bottom - box.top], w: box.width, h: box.height}; }); }""")
+    # the regions the globe faces, by the app's rule (faceRegions): the smallest is left out until the rest lie within
+    # 150° of longitude, so a small region far from the others (one made on request) may rest on the far side
+    area = lambda R: (R["bounds"][2] - R["bounds"][0]) * (R["bounds"][3] - R["bounds"][1])
+    mid = lambda R: (R["bounds"][0] + R["bounds"][2]) / 2
+    face = list(regions)
+    while len(face) > 2 and max(map(mid, face)) - min(map(mid, face)) > 150:
+        small = min(face, key=area)
+        face = [R for R in face if R is not small]
+    faced = {R["id"] for R in face}
+    seen = [k for k in mks if k["id"] in faced]
     apart = all(a["label"][2] <= b["label"][0] or b["label"][2] <= a["label"][0] or a["label"][3] <= b["label"][1] or b["label"][3] <= a["label"][1]
-                for i, a in enumerate(mks) for b in mks[i + 1:])
-    check(len(mks) == len(regions) and all(k["shown"] and k["arc"] < 75 and 0 < k["label"][0] and k["label"][2] < k["w"] and 0 < k["label"][1] and k["label"][3] < k["h"] for k in mks) and apart,
-          "on the resting globe every region has its mark in sight and its label inside the map: "
-          + ", ".join(f"{k['id']} {k['arc']:.0f}° from the middle" for k in mks))
+                for i, a in enumerate(seen) for b in seen[i + 1:])
+    check(len(mks) == len(regions) and all(k["shown"] and k["arc"] < 75 and 0 < k["label"][0] and k["label"][2] < k["w"] and 0 < k["label"][1] and k["label"][3] < k["h"] for k in seen) and apart,
+          "on the resting globe every region it faces has its mark in sight and its label inside the map: "
+          + ", ".join(f"{k['id']} {k['arc']:.0f}° from the middle{'' if k['id'] in faced else ' (not faced: small and far)'}" for k in mks))
     page.screenshot(path=str(shots / "09_globe_seasonal.png"))
     # zoomed all the way out, the map asks for tiles coarser than the archive holds; they are averaged in the browser
     page.evaluate("window.__portal.map.jumpTo({zoom: 1.2})")
@@ -506,7 +516,7 @@ with sync_playwright() as pw:
     check(abs(v1["z"] - 4.6) < 0.05 and 7.3 <= v2["z"] <= 8.5 and abs(v2["lng"] - place[0]) < 0.3 and abs(v2["lat"] - place[1]) < 0.3
           and page.locator(".maplibregl-popup").count() == 0,
           f"outside Korea two clicks move in on the place (zoom {v1['z']:.2f}, then {v2['z']:.2f})")
-    check(n["kind"] == "outside" and n["shown"] and all(r["name"] in n["text"] for r in regions) and "on request" in n["text"] and len(n["buttons"]) == 2
+    check(n["kind"] == "outside" and n["shown"] and all(r["name"] in n["text"] or r["the"] in n["text"] for r in regions) and "on request" in n["text"] and len(n["buttons"]) == 2
           and (not bg or (bg["name"] in n["text"] and "not Prithvi-OpenET-Tower" in n["text"])) and (not info["paper"] or info["paper"] in n["text"])
           and page.evaluate("getComputedStyle(document.querySelector('#steps')).visibility") == "hidden",
           "there a note says what is published: " + " ".join(n["text"].split())[:330])
@@ -555,7 +565,7 @@ with sync_playwright() as pw:
         st = page.evaluate("""() => { const t = (q) => document.querySelector(q).textContent.trim(), p = window.__portal;
             return {focus: p.focus.id, kicker: t('#lyKicker'), meanL: t('#lyMeanL'), mean: t('#lyMean'), unit: t('#lyUnit'), sr: t('#srTitle'), cal: t('#calSub'),
                     seg: [...document.querySelectorAll('#regionSeg button.on')].map((b) => b.dataset.region), res: t('#roRes')}; }""")
-        check(3 < v["z"] < 8 and R["bounds"][0] < v["lng"] < R["bounds"][2] and R["bounds"][1] < v["lat"] < R["bounds"][3] and "km per pixel" in st["res"],
+        check(3 < v["z"] < 8 and R["bounds"][0] < v["lng"] < R["bounds"][2] and R["bounds"][1] < v["lat"] < R["bounds"][3] and "per pixel" in st["res"],      # "490 m per pixel" over a region as small as the Carmel River box
               f"the '{R['short']}' button fits {R['the']} (zoom {v['z']:.2f}, {st['res']})")
         check(st["focus"] == R["id"] and R["name"] in st["kicker"] and st["meanL"] == f"{R['short']} mean" and st["sr"] == f"{R['short']} mean"
               and st["seg"] == [R["id"]] and R["the"] in st["cal"] and bool(re.fullmatch(r"[\d,]+", st["mean"] or "")),
@@ -626,7 +636,7 @@ with sync_playwright() as pw:
         page.click(".tab[data-tab=code]")
         page.wait_for_timeout(300)
         code = page.inner_text("#codePy") + page.inner_text("#codeTs")
-        check(dl["region"] == R["id"] and dl["rows"] > 100 and dl["first"].startswith(R["stem"]) and (not R["epsg"] or f"EPSG:{R['epsg']}" in dl["grid"]) and R["the"] in dl["lead"]
+        check(dl["region"] == R["id"] and dl["rows"] >= max(1, R["built"]) and dl["first"].startswith(R["stem"]) and (not R["epsg"] or f"EPSG:{R['epsg']}" in dl["grid"]) and R["the"] in dl["lead"]
               and R["stem"] in code and (not R["epsg"] or f"EPSG:{R['epsg']}" in code) and page.input_value("#codeRegion") == R["id"],
               f"{R['name']}: the Download tab lists its files ({dl['rows']} rows, {dl['first']}; {dl['grid']}) and the Code tab's examples are written for it")
         page.click(".tab[data-tab=explore]")

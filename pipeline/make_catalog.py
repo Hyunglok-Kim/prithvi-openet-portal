@@ -136,6 +136,10 @@ def main():
     ap.add_argument("--region-name", default="Korean Peninsula", help="the region's name as a title")
     ap.add_argument("--region-short", default="Peninsula", help="the name on its button and in front of 'mean'")
     ap.add_argument("--region-the", default="the Korean Peninsula", help="the name inside a sentence")
+    ap.add_argument("--clim-period", default="",
+                    help="first,last month (YYYY-MM,YYYY-MM) that the climatology and annual layers are made of, "
+                         "when that is not the training period (a region with one year of maps, say)")
+    ap.add_argument("--region-kind", default="", help="'request' for a region made on someone's request")
     ap.add_argument("--mask-zoom", type=int, default=6, help="zoom of the coverage mask's cells (6 is about 2 km); -1 for none")
     a = ap.parse_args()
 
@@ -194,12 +198,17 @@ def main():
             version = json.load(open(out)).get("version", "")
         except ValueError:
             version = ""
+    # the months the climatology and the annual layer are made of, when they are not the training period
+    clim_period = [x.strip() for x in a.clim_period.split(",")] if a.clim_period else None
+    if clim_period and (len(clim_period) != 2 or not all(re.fullmatch(r"\d{4}-\d{2}", x) for x in clim_period)):
+        raise SystemExit("--clim-period wants YYYY-MM,YYYY-MM")
     source = (source_grid(tifs[0]) if tifs else None) or {"grid": ""}
     source.update({"format": "COG, uint16, 2 bands, scale 0.1", "total_bytes": sum(r["cog_bytes"] for r in months)})
     any_layer = next(iter(layers.values()))
     cat = {
         "id": a.catalog_id,
-        "region": {"id": a.region_id, "name": a.region_name, "short": a.region_short, "the": a.region_the},
+        "region": dict({"id": a.region_id, "name": a.region_name, "short": a.region_short, "the": a.region_the},
+                       **({"kind": a.region_kind} if a.region_kind else {})),
         "version": version or time.strftime("prototype-%Y-%m-%d"),
         "generated": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
         "encoding": {"kind": "numeric-8bit", "nodata_dn": 255,
@@ -207,8 +216,9 @@ def main():
         "zoom": {"min": any_layer["zmin"], "max": any_layer["zmax"]},
         "bounds": any_layer["bounds_lonlat"],
         "land_px": land_px,
-        "record": {"first": months[0]["ym"], "last": months[-1]["ym"], "n": len(months),
-                   "train": list(TRAIN), "with_tiles": sum(1 for r in months if "tiles" in r)},
+        "record": dict({"first": months[0]["ym"], "last": months[-1]["ym"], "n": len(months),
+                        "train": list(TRAIN), "with_tiles": sum(1 for r in months if "tiles" in r)},
+                       **({"clim": clim_period} if clim_period else {})),
         "source": source,
         "annual": pick(annual) if annual else None,
         "clim": [dict(pick(layers[f"clim_{m:02d}"]), month=m) for m in range(1, 13) if f"clim_{m:02d}" in layers],
@@ -226,7 +236,10 @@ def main():
         except ValueError:
             continue
         subs.append({"id": (sub.get("region") or {}).get("id") or os.path.basename(os.path.dirname(p)),
-                     "catalog": os.path.relpath(p, a.out_dir)})
+                     "catalog": os.path.relpath(p, a.out_dir),
+                     "request": (sub.get("region") or {}).get("kind") == "request"})
+    # regions made on request come after the others, so that buttons and lists name the large regions first
+    subs = [{"id": s_["id"], "catalog": s_["catalog"]} for s_ in sorted(subs, key=lambda s_: s_["request"])]
     if subs:
         cat["regions"] = subs
     # a background layer for the rest of the globe, if make_background.py has made one

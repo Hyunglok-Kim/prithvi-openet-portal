@@ -61,8 +61,15 @@ const TILE = 256;
    before, so the globe keeps its size (faceRegions, once the catalogs are read). */
 const GLOBE = { center: [127.6, 30], zoom: 1.55, sizedAt: 18 };
 function faceRegions() {
-  if (REG.length < 2) return;
-  const lons = REG.map(midLon);
+  /* The middle of the regions that one face of the globe can hold. A small region far from the rest (one made on
+     request on another continent) does not turn the globe away from the large ones: the smallest is left out until
+     the others lie within 150° of longitude. It is reached from its button, the "Go to" list and the coverage card. */
+  const area = (R) => (R.bounds[2] - R.bounds[0]) * (R.bounds[3] - R.bounds[1]);
+  const spread = (a) => Math.max(...a.map(midLon)) - Math.min(...a.map(midLon));
+  let face = REG.slice();
+  while (face.length > 2 && spread(face) > 150) face = face.filter((R) => R !== face.reduce((a, b) => (area(b) < area(a) ? b : a)));
+  if (face.length < 2) return;
+  const lons = face.map(midLon);
   GLOBE.center = [Math.round((Math.min(...lons) + Math.max(...lons)) / 2 * 10) / 10, GLOBE.center[1]];
 }
 const NOPAD = { top: 0, bottom: 0, left: 0, right: 0 };
@@ -115,11 +122,15 @@ const CITIES = {
     ["Strasbourg", 7.7521, 48.5734], ["Bordeaux", -0.5792, 44.8378], ["Lille", 3.0573, 50.6292],
     ["Rennes", -1.6778, 48.1173], ["Montpellier", 3.8767, 43.6108], ["Brest", -4.4861, 48.3904],
     ["Clermont-Ferrand", 3.087, 45.7772], ["Dijon", 5.0415, 47.322], ["Ajaccio", 8.7369, 41.9192]],
+  carmel: [["San Jose", -121.8863, 37.3382], ["Salinas", -121.6555, 36.6777], ["Monterey", -121.8947, 36.6002],
+    ["Carmel Valley", -121.7319, 36.4797], ["Watsonville", -121.7569, 36.9102], ["Gilroy", -121.5683, 37.0058],
+    ["Morgan Hill", -121.6544, 37.1305], ["Hollister", -121.4016, 36.8525], ["Big Sur", -121.8081, 36.2704]],
 };
 /* A place for the code examples of each region: a box to read and a point for a series. */
 const EXAMPLES = {
   kp: { box: [127.15, 38.10, 127.45, 38.30], boxName: "the Cheorwon plain", point: [127.28, 38.20] },
   fr: { box: [1.45, 48.05, 1.80, 48.30], boxName: "the Beauce plain", point: [1.63, 48.20] },
+  carmel: { box: [-121.80, 36.44, -121.62, 36.54], boxName: "the Carmel Valley", point: [-121.73, 36.48] },
 };
 
 /* ───────────────────────────── small helpers ───────────────────────────── */
@@ -450,7 +461,7 @@ function readMask(m) {
    with the addresses of the files. Addresses in a catalog are relative to that catalog. */
 function addRegion(cat, url) {
   const info = cat.region || { id: "kp", name: "Korean Peninsula", short: "Peninsula", the: "the Korean Peninsula" };      // a catalog from before regions had names
-  const train = `${cat.record.train[0].slice(0, 4)}–${cat.record.train[1].slice(0, 4)}`, at = (rel) => new URL(rel, url).href;
+  const span = climSpan({ record: cat.record }), at = (rel) => new URL(rel, url).href;
   const R = { id: info.id, name: info.name, short: info.short || info.name, the: info.the || info.name, cat, url, bounds: cat.bounds, zoom: cat.zoom,
               record: cat.record, months: cat.months, version: cat.version, mask: readMask(cat.mask), L: new Map(), fine: [], fineZoom: 0, fineWhat: "" };
   const put = (rec, more) => {
@@ -458,8 +469,8 @@ function addRegion(cat, url) {
     R.L.set(ly.id, ly);
     if (!LAYERS.has(ly.id)) LAYERS.set(ly.id, { id: ly.id, kind: ly.kind, label: ly.label, units: ly.units, dn_step: ly.dn_step, ym: ly.ym, month: ly.month });
   };
-  if (cat.annual) put(cat.annual, { kind: "annual", label: `Mean annual ET, ${train}` });
-  for (const c of cat.clim || []) put(c, { kind: "clim", label: `${MONL[c.month - 1]} mean, ${train}` });
+  if (cat.annual) put(cat.annual, { kind: "annual", label: span.mean ? `Mean annual ET, ${span.words}` : `Annual ET, ${span.words}` });
+  for (const c of cat.clim || []) put(c, { kind: "clim", label: span.mean ? `${MONL[c.month - 1]} mean, ${span.words}` : `${MONL[c.month - 1]} ${span.yearOf(c.month)}` });
   for (const m of cat.months) if (m.tiles) put(m.tiles, { kind: "month", ym: m.ym, rec: m, label: ymLabel(m.ym) });
   if (cat.fine && (cat.fine.areas || []).length && cat.fine.zoom > cat.zoom.max) {
     R.fine = cat.fine.areas.map((a) => ({ ...a, region: R })); R.fineZoom = cat.fine.zoom; R.fineWhat = cat.fine.what || "";
@@ -502,6 +513,16 @@ const wordList = (a, and = "and") => (a.length < 3 ? a.join(` ${and} `) : `${a.s
 const theRegions = (and) => wordList(REG.map((R) => R.the), and);
 const regionNames = () => wordList(REG.map((R) => R.name));
 const TRAIN_YEARS = () => `${CAT.record.train[0].slice(0, 4)}–${CAT.record.train[1].slice(0, 4)}`;
+/* The months a region's climatology and annual layers are made of. For a region with a long record they are the
+   training years and those layers are means; a region with one year of maps (one made on request) has that year
+   (`record.clim` in its catalog): its annual layer is that year's total and its seasonal cycle is that year's months. */
+function climSpan(R) {
+  const c = R.record.clim;
+  if (!c) return { mean: true, words: `${R.record.train[0].slice(0, 4)}–${R.record.train[1].slice(0, 4)}`, yearOf: () => null };
+  const short = (ym) => `${MON[+ym.slice(5) - 1]} ${ym.slice(0, 4)}`;
+  return { mean: false, words: `${short(c[0])} – ${short(c[1])}`,
+           yearOf: (m) => { for (let y = +c[0].slice(0, 4); y <= +c[1].slice(0, 4); y++) { const ym = `${y}-${String(m).padStart(2, "0")}`; if (ym >= c[0] && ym <= c[1]) return y; } return null; } };
+}
 function demandWindow() {
   const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - CFG.demandLagMonths);      // day 1 first: "31 May minus three months" must not roll into March
   const last = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
@@ -1058,7 +1079,7 @@ function updateNote(redraw) {
     const bg = currentBg(), many = REG.length > 1;
     $("#znHead").textContent = `Only ${theRegions()} ${many ? "have" : "has"} detailed maps for now`;
     $("#znText").textContent = (bg ? `What you see here is the background layer (${BG.name}, about ${fmt(BG.cell_km)} km per cell), not Prithvi-OpenET-Tower. ` : "") +
-      capFirst(`${reviewClause()}ready-made maps are published for ${theRegions()} only. Other regions are produced on request.`);
+      capFirst(`${reviewClause()}only these are published; other regions are produced on request.`);     // the regions are named in the title: naming them twice made the note so tall with three that it covered the popup's button
     /* One button, to the nearest region. A button for each made the note a line taller, and it then covered
        the "Request this area" button of the popup that a click on the place opens. */
     $("#znBtns").replaceChildren(
@@ -1112,12 +1133,15 @@ function applyLayer() {
 function builtYears() { return [...new Set(builtMonths().map((ym) => ym.slice(0, 4)))]; }
 function renderWhen() {
   const box = $("#when"); box.replaceChildren();
+  const sp = climSpan(FOCUS);
   document.querySelectorAll("#modeSeg button").forEach((b) => {
     b.classList.toggle("on", b.dataset.mode === state.mode);
+    if (b.dataset.mode === "annual") { b.textContent = sp.mean ? "Annual mean" : "Annual total"; b.title = sp.mean ? `Sum of the ${sp.words} monthly means` : `Sum of the twelve months, ${sp.words}`; }
+    if (b.dataset.mode === "clim") b.title = sp.mean ? `Mean of each calendar month over ${sp.words}` : `Each calendar month of ${sp.words}`;
     const ok = b.dataset.mode === "annual" ? LAYERS.has("clim_annual") : b.dataset.mode === "clim" ? climMonths().length > 0 : builtYears().length > 0;
     b.disabled = !ok;
   });
-  if (state.mode === "annual") { box.append(el("span", { class: "sub" }, `Sum of the twelve monthly means, ${TRAIN_YEARS()}`)); return; }
+  if (state.mode === "annual") { box.append(el("span", { class: "sub" }, sp.mean ? `Sum of the twelve monthly means, ${sp.words}` : `Sum of the twelve months, ${sp.words}`)); return; }
   let avail;
   if (state.mode === "month") {
     const y = state.ym.slice(0, 4);
@@ -1198,8 +1222,15 @@ function renderLayerCard() {
   const flag = $("#lyFlag"); flag.hidden = true;
   let sub = "";
   if (ly.missing) sub = `There is no map of this layer for ${FOCUS.the}.`;
-  else if (ly.kind === "annual") sub = `Sum of the twelve monthly means over ${TRAIN_YEARS()}. Gap-free wherever every calendar month was observed at least once.`;
-  else if (ly.kind === "clim") sub = `Mean of the ${MONL[ly.month - 1]} maps over ${TRAIN_YEARS()}, using the years in which the pixel was observed.`;
+  else if (ly.kind === "annual") {
+    const sp = climSpan(FOCUS);
+    sub = sp.mean ? `Sum of the twelve monthly means over ${sp.words}. Gap-free wherever every calendar month was observed at least once.`
+      : `Sum of the twelve monthly maps, ${sp.words}: one year, not a long-term mean. Shown where all twelve months were observed.`;
+  } else if (ly.kind === "clim") {
+    const sp = climSpan(FOCUS);
+    sub = sp.mean ? `Mean of the ${MONL[ly.month - 1]} maps over ${sp.words}, using the years in which the pixel was observed.`
+      : `${capFirst(FOCUS.the)} has one year of maps (${sp.words}), so this is the map of ${MONL[ly.month - 1]} ${sp.yearOf(ly.month)} itself.`;
+  }
   else {
     const r = ly.rec;
     sub = `${r.sensors === "L30" ? "Landsat only" : "Landsat and Sentinel-2"} · ${fmtBytes(r.cog_bytes)} GeoTIFF`;
@@ -1303,11 +1334,13 @@ function yearSeriesFromCatalog(R, year) {
 /* The seasonal cycle of the region in focus, from its catalog: the chosen year against the training-period mean. */
 function renderRegionSeries() {
   const R = FOCUS, y = state.seriesYear, clim = MON.map((_, i) => { const c = (R.cat.clim || []).find((k) => k.month === i + 1); return c ? c.mean : null; });
-  const series = [];
-  if (y) series.push({ name: y, short: y, color: "#2E7BA8", values: yearSeriesFromCatalog(R, y) });
-  series.push({ name: `${TRAIN_YEARS()} mean`, short: "mean", color: "#8C8A80", values: clim });
+  const series = [], sp = climSpan(R);
+  /* A region with one year of maps: its seasonal cycle is that year, so the chart shows it once, not a year against itself. */
+  if (y && sp.mean) series.push({ name: y, short: y, color: "#2E7BA8", values: yearSeriesFromCatalog(R, y) });
+  series.push(sp.mean ? { name: `${sp.words} mean`, short: "mean", color: "#8C8A80", values: clim } : { name: sp.words, short: "year", color: "#2E7BA8", values: clim });
   $("#srKicker").textContent = "Seasonal cycle"; $("#srTitle").textContent = `${R.short} mean`; $("#srReset").hidden = true;
-  $("#srSub").textContent = y ? `Monthly ET averaged over the land observed in each month of ${y}, against the ${TRAIN_YEARS()} mean. Cloudy months average fewer pixels.` : "";
+  $("#srSub").textContent = !sp.mean ? `Monthly ET averaged over the land observed in each month of ${sp.words}. Cloudy months average fewer pixels.`
+    : y ? `Monthly ET averaged over the land observed in each month of ${y}, against the ${sp.words} mean. Cloudy months average fewer pixels.` : "";
   drawChart({ title: `${R.short} mean monthly ET`, labels: MON, units: "mm/month", digits: 1, series,
               note: "mean over land pixels with a clear-sky observation", tipHead: (i) => MONL[i] });
 }
@@ -1344,12 +1377,15 @@ async function loadPickSeries() {
     $("#recordBox").hidden = true;
     return;
   }
-  const nObs = yr.filter((v) => v != null).length;
-  $("#srSub").textContent = `${annual == null ? "" : `Mean annual ET ${fmt(annual)} mm/year (${TRAIN_YEARS()}). `}` +
-    `${nObs} of 12 months of ${y} had a clear observation here.`;
+  const nObs = yr.filter((v) => v != null).length, nMaps = ids.slice(0, 12).filter((id) => R.L.has(id)).length, sp = climSpan(R);
+  $("#srSub").textContent = !sp.mean ? `${annual == null ? "" : `ET ${fmt(annual)} mm over ${sp.words}. `}${clim.filter((v) => v != null).length} of its 12 months had a clear observation here.`
+    : `${annual == null ? "" : `Mean annual ET ${fmt(annual)} mm/year (${sp.words}). `}` +
+      (nMaps === 12 ? `${nObs} of 12 months of ${y} had a clear observation here.`
+        : nMaps ? `${nObs} of the ${nMaps} months of ${y} that ${R.the} has maps for had a clear observation here.` : `${capFirst(R.the)} has no maps of ${y}.`);
   drawChart({ title: `Monthly ET at ${where}`, labels: MON, units: "mm/month", tipHead: (i) => `${MONL[i]}`,
     note: (nativeAt(lng, lat) ? "browse-tile values" : `means over a ${finestRes(R)} cell of the public preview tiles`) + ", rounded to 1 mm/month; use the GeoTIFFs for analysis",
-    series: [{ name: y, short: y, color: "#2E7BA8", values: yr }, { name: `${TRAIN_YEARS()} mean`, short: "mean", color: "#8C8A80", values: clim }] });
+    series: sp.mean ? [{ name: y, short: y, color: "#2E7BA8", values: yr }, { name: `${sp.words} mean`, short: "mean", color: "#8C8A80", values: clim }]
+      : [{ name: sp.words, short: "year", color: "#2E7BA8", values: clim }] });
   if (!recordModel || recordModel.pick !== state.pick) loadPickRecord(where);      // a year change keeps the record already read
 }
 

@@ -59,6 +59,26 @@
    255
   ]
  },
+ "carmel/clim/CARMEL_ET_clim_annual.pmtiles|8/41/99": {
+  "sum": 13617910,
+  "n255": 44076,
+  "px": [
+   255,
+   65,
+   255,
+   255
+  ]
+ },
+ "carmel/monthly/CARMEL_ET_202507.pmtiles|10/165/400": {
+  "sum": 8919618,
+  "n255": 14529,
+  "px": [
+   255,
+   124,
+   48,
+   255
+  ]
+ },
  "clim/KP_ET_clim_annual.pmtiles|12/3495/1577|0,193,32,32": {
   "sum": 141178,
   "n255": 0
