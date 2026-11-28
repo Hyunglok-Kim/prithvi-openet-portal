@@ -35,7 +35,8 @@ TILES = [("clim/KP_ET_clim_annual.pmtiles", 8, 218, 99),       # mid-zoom, centr
          ("fr/monthly/FR_ET_202107.pmtiles", 5, 16, 11),       # overview: most of France in one tile
          # a region with one year of maps, made on request (left out when the set has none)
          ("carmel/clim/CARMEL_ET_clim_annual.pmtiles", 8, 41, 99),   # mid-zoom, the middle of the Carmel River box
-         ("carmel/monthly/CARMEL_ET_202507.pmtiles", 10, 165, 400)]  # the finest level of a reduced copy, the Carmel Valley
+         ("carmel/monthly/CARMEL_ET_202507.pmtiles", 10, 165, 400),  # zoom 10, the Carmel Valley
+         ("carmel/monthly/CARMEL_ET_202507.pmtiles", 12, 662, 1601)] # native zoom, the Carmel Valley: its public copy is the whole set
 WINDOWS = [("clim/KP_ET_clim_annual.pmtiles", 12, 127.24966, 38.20140),     # the middle of the Cheorwon area
            ("monthly/KP_ET_202107.pmtiles", 12, 126.35914, 36.50566),       # the middle of the Anmyeon area
            ("fr/clim/FR_ET_clim_annual.pmtiles", 12, 1.95172, 48.84432),    # France: the middle of the Grignon area

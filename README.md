@@ -8,11 +8,12 @@ Science and Technology.
 **Live:** https://hyunglok-kim.github.io/prithvi-openet-portal/ — also embedded at
 https://hydroai.net/data#et.
 
-**Status: public preview.** The paper on this dataset is under review. Two regions have ready-made
-maps: the Korean Peninsula and France (the mainland and Corsica), both from April 2013 onward. The
-public site shows the maps down to about 120 m per pixel (a reduced copy of the browse tiles), and
-at the native 30 m in nineteen small areas around the paper's flux-tower sites, eight on the Korean
-Peninsula and eleven in France. The full 30 m
+**Status: public preview.** The paper on this dataset is under review. Three regions have ready-made
+maps: the Korean Peninsula and France (the mainland and Corsica), both from April 2013 onward, and the
+Carmel River area in California, one year (October 2024 to September 2025) made on request. The
+public site shows the Korean Peninsula and France down to about 120 m per pixel (a reduced copy of the
+browse tiles), and at the native 30 m in nineteen small areas around the paper's flux-tower sites, eight
+on the Korean Peninsula and eleven in France; the Carmel River area is shown whole at 30 m. The full 30 m
 maps and the GeoTIFFs will be released after the paper is accepted. The model code is at
 [Prithvi_OpenET_code_public](https://github.com/Hyunglok-Kim/Prithvi_OpenET_code_public).
 
@@ -26,7 +27,7 @@ maps and the GeoTIFFs will be released after the paper is accepted. The model co
 - A region is one click away (a button over the map, the list beside it), and the cards beside the
   map — the mean, the seasonal cycle, the record — describe the region the map is on.
 - Click to zoom from the overview (about 2 km per pixel) to 120 m. Where the tiles on hand reach
-  it — the full set, or the sample areas of the public copy — a second click goes on to the native
+  it — the full set, the sample areas of the public copy, or all of the Carmel River area — a second click goes on to the native
   30 m. Past what is published at a place, a note at the top of the map says so.
 - Three layers: mean annual ET, the mean seasonal cycle, and any single month. Months outside the
   model's 2016–2024 training period are flagged.

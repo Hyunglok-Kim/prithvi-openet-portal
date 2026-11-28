@@ -41,7 +41,7 @@ def source_grid(tif):
     epsg, gt = srs.GetAuthorityCode(None), ds.GetGeoTransform()
     return {"grid": f"EPSG:{epsg}, {abs(gt[1]):g} m, {ds.RasterXSize} x {ds.RasterYSize} px",
             "epsg": int(epsg) if epsg else None, "crs": srs.GetName(), "res_m": abs(gt[1]),
-            "width": ds.RasterXSize, "height": ds.RasterYSize}
+            "width": ds.RasterXSize, "height": ds.RasterYSize, "bands": ds.RasterCount}
 
 
 def tiles_at(rd, z):
@@ -159,6 +159,11 @@ def main():
 
     annual = layers.get("clim_annual")
     land_px = annual["valid_px"] if annual else max(v["valid_px"] for v in layers.values())
+    if a.clim_period:
+        # One year of maps: the annual total exists only where all twelve months have a value, so it is smaller
+        # than a month's footprint and would put a month's share of land observed above 100 %. Count the land
+        # as the largest footprint of any layer instead (the training-period regions keep the annual layer's).
+        land_px = max([land_px] + [v["valid_px"] for v in layers.values()])
 
     def pick(s):
         # the histogram stays in the layer's sidecar .json; the portal fetches it when the layer is shown
@@ -203,7 +208,8 @@ def main():
     if clim_period and (len(clim_period) != 2 or not all(re.fullmatch(r"\d{4}-\d{2}", x) for x in clim_period)):
         raise SystemExit("--clim-period wants YYYY-MM,YYYY-MM")
     source = (source_grid(tifs[0]) if tifs else None) or {"grid": ""}
-    source.update({"format": "COG, uint16, 2 bands, scale 0.1", "total_bytes": sum(r["cog_bytes"] for r in months)})
+    nb = source.pop("bands", None) or 2
+    source.update({"format": f"COG, uint16, {nb} bands, scale 0.1", "total_bytes": sum(r["cog_bytes"] for r in months)})
     any_layer = next(iter(layers.values()))
     cat = {
         "id": a.catalog_id,

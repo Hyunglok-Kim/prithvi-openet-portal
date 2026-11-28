@@ -11,11 +11,13 @@ before changing anything.
 
 **Status (November 2026): public preview.** The portal is live on GitHub Pages
 (https://hyunglok-kim.github.io/prithvi-openet-portal/) and embedded on https://hydroai.net/data#et.
-Two regions have maps: the Korean Peninsula (since 2026-11-15) and France, the mainland and Corsica
-(since 2026-11-21). The public site reads a **reduced copy** of the browse tiles — zoom 3–10, about
+Three regions have maps: the Korean Peninsula (since 2026-11-15), France, the mainland and Corsica
+(since 2026-11-21), and the Carmel River area in California, made on request (since 2026-11-27). For the
+first two the public site reads a **reduced copy** of the browse tiles — zoom 3–10, about
 120 m, plus the native 30 m inside nineteen small areas around the paper's flux-tower sites (eight
-on the Korean Peninsula, eleven in France) —
-from tile repositories on GitHub Pages (three for the Korean Peninsula, seven for France), because
+on the Korean Peninsula, eleven in France) — the Carmel River area is public whole, at 30 m (since
+2026-11-28, see "A region made on request") —
+from tile repositories on GitHub Pages (three for the Korean Peninsula, seven for France, one for the Carmel River area), because
 GitHub Pages cannot hold the full sets (17.6 GB and 49.8 GB) and because the full 30 m maps are
 released after the paper is accepted; the full sets are served only inside the lab. A line at
 the top of the page says so. The GeoTIFFs are not published. The
@@ -120,7 +122,27 @@ set it apart, both written into its catalog by `make_catalog.py`:
   and named after the person who asked. On the server `src/carmel/` holds links in the layout the pipeline
   expects and a `SHA256SUMS` with those paths, so no file name, path or catalog field carries the name.
   **Nothing public names the person who asked**: not the catalogs, the repositories, this file or the page.
-- No 30 m sample areas: the paper has none there, and the public copy stops at zoom 10 (about 120 m).
+- **Public at 30 m, whole** (since 2026-11-28, at the lab head's word "카멀강 30 미터 보이게 해"; until then it
+  stopped at zoom 10 like the others, with no sample areas). Its public copy is the whole set, made with
+  `make_preview_copy.py --max-zoom 12` (one folder, 107 MB; the catalog's `zoom.max` equals `zoom.native` and
+  `copy.kind` is `full`). The app takes such a region as full (`regFull`) while the others stay reduced: a second
+  click goes on to the native zoom, the readout says "(native)", the note about the finest level never comes up
+  there, and the sentences about the preview name it beside the sample areas (`applyPreviewWording`: the hint
+  under the map, the About item, the Tiles paragraph). The badge over the map speaks of the region in focus when
+  that one is whole ("Public preview · 30 m in all of the Carmel River area") and keeps its old words otherwise
+  (`renderPreviewBadge`): one sentence for both was too long and dropped to a row of its own on a 1440 px screen,
+  which pushed the map down. Other regions made on request do not follow automatically: whether one goes public
+  whole is the lab head's word each time.
+- **Its maps were delivered twice.** The first delivery (2026-11-27) left a pixel empty when the month's main
+  scenes had no clear view of it; the second (2026-11-28, data version `prototype-2026-11-28`) fills such a pixel
+  from the month's other clear scenes and adds a third band, the gap-fill flag (about 2 % of the land in July
+  2025, under 0.5 % in the other months; the About tab's "Gaps" says so for this region). The tiles show band 1
+  only, as for every region. Rebuilt with the same steps (months, `clim 2024-2025`, background, first catalog,
+  public copy); the background tiles came out the same. With one year of maps the annual total exists only where
+  all twelve months do, so `make_catalog.py` counts a one-year region's land as its largest layer footprint
+  (`land_px`), else a month's share of land observed came out above 100 % (103 % in the first delivery). The
+  record calendar caps that share at 100 % as the card always did (the Korean Peninsula has four months at
+  100.1 %).
 - The notes about what is published name the regions once, in the title: with three regions the body's
   repeat of the list made the note tall enough to cover the "Request this area" button of the popup.
 
@@ -400,8 +422,8 @@ python pipeline/make_preview_copy.py --src /path/to/out/fr --out /path/to/public
   background layer), `-2`, `-3`. The catalog addresses the other two as
   `../prithvi-openet-tiles-2/monthly/…`, which works because the sites are neighbours on one
   host. `js/config.js` `dataBase` points at the first.
-- The Carmel River copy is one folder of 10 MB, `prithvi-openet-tiles-carmel-1` (25 archives, no sample
-  areas). The Korean copy's catalog links it after France: `--link fr=… --link carmel=../prithvi-openet-tiles-carmel-1/catalog.json`.
+- The Carmel River copy is the whole set since 2026-11-28: one folder of 107 MB, `prithvi-openet-tiles-carmel-1`
+  (25 archives, zoom 3–12, `--max-zoom 12 --volume-mb 900`; it was a zoom-10 copy of 10 MB before). The Korean copy's catalog links it after France: `--link fr=… --link carmel=../prithvi-openet-tiles-carmel-1/catalog.json`.
   When it was added the Korean copy was rebuilt on the server into a fresh folder and only its
   `catalog.json` and background archive were taken: its month archives came out two bytes apart (the
   gzip header, see below) and its `.fine.pmtiles` 1–3 % larger (the server's Pillow and zlib encode the
@@ -682,7 +704,8 @@ Left:
   eight Korean and eleven French flux-tower sites. The sample-area tiles are built so that this is
   true pixel by pixel (checked for France over all 173 layers: every pixel inside an outline is
   the full set's, every pixel outside it the zoom-10 cell enlarged); keep it that way. Which areas
-  go in is the lab head's decision, not a convenience.
+  go in is the lab head's decision, not a convenience. One region is public whole at 30 m: the
+  Carmel River area, small and made on request, since 2026-11-28 at the lab head's word.
 - **Flag extrapolation.** The model was trained on 2016–2024; months outside are marked in the layer
   card, the record calendar, the pixel chart, the Download table and the CSV.
 - **Never hide gaps.** A regional mean is a mean over observed pixels, so it is always shown next

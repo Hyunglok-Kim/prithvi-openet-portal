@@ -1520,9 +1520,9 @@ function renderCalendar() {
         lines = [ymLabel(ym), ym < REC.first || ym > REC.last ? "outside the record" : "not produced — an input was unavailable"];
       } else if (r.tiles) {
         node = el("button", { class: "cal-c built" + (state.mode === "month" && state.ym === ym ? " sel" : ""), style: `background:${cls(r.tiles.cover)}`,
-          "aria-label": `${ymLabel(ym)}, ${Math.round(r.tiles.cover * 100)}% of land observed`,
+          "aria-label": `${ymLabel(ym)}, ${Math.round(Math.min(1, r.tiles.cover) * 100)}% of land observed`,
           onclick: () => { stopPlay(); state.mode = "month"; state.ym = ym; state.seriesYear = ym.slice(0, 4); applyLayer(); if (state.pick) loadPickSeries(); } });
-        lines = [ymLabel(ym), `${fmt(r.tiles.cover * 100, 1)}% of land observed · mean ${fmt(r.tiles.mean)} mm/month`, r.period === "train" ? "training period" : "extrapolated in time"];
+        lines = [ymLabel(ym), `${fmt(Math.min(1, r.tiles.cover) * 100, 1)}% of land observed · mean ${fmt(r.tiles.mean)} mm/month`, r.period === "train" ? "training period" : "extrapolated in time"];
       } else {
         node = el("span", { class: "cal-c pending", tabindex: "0" });
         lines = [ymLabel(ym), `GeoTIFF ready (${fmtBytes(r.cog_bytes)}) · map tiles not built yet`, r.period === "train" ? "training period" : "extrapolated in time"];
@@ -1812,20 +1812,36 @@ function wire() {
 function applyPreviewWording() {
   const fine = finestAll(), n = FINE.length;
   const low = REG.filter((R) => !regFull(R)), one = low.length === 1;      // the regions whose copy is a reduced one
-  document.querySelector('#steps span[data-step="2"]').textContent = `Finest here · ${finestRes(FOCUS)}`;
-  $("#hint").textContent = `Click ${theRegions("or")}: the map zooms in to about ${fine} per pixel, the finest level of this public preview, and the panel on the right shows the monthly series at that spot.` +
+  /* A region whose public copy is its whole set goes down to 30 m everywhere: the Carmel River area, small and made
+     on request, since 2026-11-28 at the lab head's word. The sentences name it beside the sample areas. */
+  const full = REG.filter(regFull), fullW = wordList(full.map((R) => R.the));
+  document.querySelector('#steps span[data-step="2"]').textContent = regFull(FOCUS) ? "Native 30 m" : `Finest here · ${finestRes(FOCUS)}`;
+  $("#hint").textContent = `Click ${theRegions("or")}: the map zooms in to about ${fine} per pixel, the finest level of this public preview` +
+    (full.length ? ` for ${wordList(low.map((R) => R.the))}` : "") + ", and the panel on the right shows the monthly series at that spot." +
+    (full.length ? ` In ${fullW} it goes on to the native 30 m everywhere.` : "") +
     (n ? ` ${capFirst(fineWords("small area"))} ${n > 1 ? "go" : "goes"} on to the native 30 m; ${n > 1 ? "they are" : "it is"} outlined on the map and listed under “Go to”.` : "") +
     " The 30 m maps themselves are the GeoTIFFs.";
   $("#rcHead").textContent = "Full record at this spot";
+  const at30 = [...(n ? [`inside ${numWord(n)} small area${n > 1 ? "s" : ""}`] : []), ...(full.length ? [`in all of ${fullW}`] : [])];
   $("#tilesZoom").textContent = `zoom ${low[0].zoom.min}–${low[0].zoom.max} on this public copy, about ${fine} per pixel at best` +
-    (n ? `, plus zoom ${Math.max(...REG.map((R) => R.fineZoom))} (30 m) inside ${numWord(n)} small area${n > 1 ? "s" : ""}` : "") + `; the full set goes to zoom ${nativeZoom(low[0])}, 30 m`;
-  const badge = $("#previewBadge");
-  badge.textContent = n ? `Public preview · ${fine}, and 30 m in ${numWord(n)} area${n > 1 ? "s" : ""}` : `Public preview · maps shown down to ${fine}`; badge.hidden = false;
+    (at30.length ? `, plus zoom ${nativeZoom(low[0])} (30 m) ${at30.join(" and ")}` : "") + `; the full set goes to zoom ${nativeZoom(low[0])}, 30 m`;
+  renderPreviewBadge();
   const li = $("#abPreview");
-  li.replaceChildren(el("b", {}, "This site shows a reduced copy."), ` The maps on this page stop at about ${fine} per pixel` +
-    (one ? "" : ` (${wordList(low.map((R) => `${finestRes(R)} in ${R.the}`))})`) + `, and a value read at a clicked spot is the mean over ${one ? `a ${fine} cell` : "one such cell"}.` +
-    (n ? ` ${capFirst(fineWords("small area", true))} ${n > 1 ? "keep" : "keeps"} the native 30 m.` : "") + " The 30 m maps are the GeoTIFFs.");
+  li.replaceChildren(el("b", {}, "This site shows a reduced copy."), ` The maps ${full.length ? `of ${wordList(low.map((R) => R.the))}` : "on this page"} stop at about ${fine} per pixel` +
+    (one ? "" : ` (${wordList(low.map((R) => `${finestRes(R)} in ${R.the}`))})`) + `, and a value read at a clicked spot ${full.length ? "there " : ""}is the mean over ${one ? `a ${fine} cell` : "one such cell"}.` +
+    (n ? ` ${capFirst(fineWords("small area", true))} ${n > 1 ? "keep" : "keeps"} the native 30 m.` : "") +
+    (full.length ? ` ${capFirst(fullW)} ${full.length > 1 ? "are" : "is"} shown at the native 30 m throughout.` : "") + " The 30 m maps are the GeoTIFFs.");
   li.hidden = false;
+}
+/* The badge over the map, for a reduced copy: what the preview shows. While the region in focus is one whose copy is
+   its whole set it says so for that region; otherwise it speaks of the reduced ones. It stays short: on a 1440 px
+   screen it shares the row of the layer buttons, and a longer one dropped to a row of its own and pushed the map down. */
+function renderPreviewBadge() {
+  if (fullRes()) return;
+  const badge = $("#previewBadge"), n = FINE.length, fine = finestAll();
+  badge.textContent = regFull(FOCUS) ? `Public preview · 30 m in all of ${FOCUS.the}`
+    : n ? `Public preview · ${fine}, and 30 m in ${numWord(n)} area${n > 1 ? "s" : ""}` : `Public preview · maps shown down to ${fine}`;
+  badge.hidden = false;
 }
 /* What the page says about its regions: their names wherever the page lists what is ready, and the parts of
    its text that are about one region only, which show when that region is there. */
@@ -1845,6 +1861,7 @@ function renderRegionUI() {
   document.querySelectorAll("#regionSeg button").forEach((b) => { const on = b.dataset.region === FOCUS.id; b.classList.toggle("on", on); b.setAttribute("aria-pressed", String(on)); });
   for (const q of ["#dlRegion", "#codeRegion"]) $(q).value = FOCUS.id;
   $("#srReset").textContent = `← ${FOCUS.short} mean`;
+  renderPreviewBadge();
   renderDownload(); renderCode();
 }
 /* A line at the very top of the page: where the paper stands and when the data will be released

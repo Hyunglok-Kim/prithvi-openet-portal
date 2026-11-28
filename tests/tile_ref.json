@@ -60,8 +60,8 @@
   ]
  },
  "carmel/clim/CARMEL_ET_clim_annual.pmtiles|8/41/99": {
-  "sum": 13617910,
-  "n255": 44076,
+  "sum": 13527712,
+  "n255": 43401,
   "px": [
    255,
    65,
@@ -70,13 +70,23 @@
   ]
  },
  "carmel/monthly/CARMEL_ET_202507.pmtiles|10/165/400": {
-  "sum": 8919618,
-  "n255": 14529,
+  "sum": 8936823,
+  "n255": 14505,
   "px": [
    255,
    124,
    48,
    255
+  ]
+ },
+ "carmel/monthly/CARMEL_ET_202507.pmtiles|12/662/1601": {
+  "sum": 6565674,
+  "n255": 0,
+  "px": [
+   84,
+   132,
+   76,
+   137
   ]
  },
  "clim/KP_ET_clim_annual.pmtiles|12/3495/1577|0,193,32,32": {

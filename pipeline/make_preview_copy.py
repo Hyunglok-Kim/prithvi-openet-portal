@@ -14,7 +14,9 @@ work as long as the sites sit next to each other on one host.
 
 In the catalog, zoom.max becomes --max-zoom and zoom.native keeps the full set's top zoom. That
 pair is how the portal knows it is showing a reduced copy, and it says so wherever it names a
-resolution. Statistics (means, percentiles, share of land observed) are copied unchanged: they come
+resolution. A --max-zoom at or above the set's top zoom (12) copies the whole set: zoom.max then
+equals zoom.native, and the portal shows that region down to 30 m (a small region fits; the
+Carmel River area is one folder of about 110 MB). Statistics (means, percentiles, share of land observed) are copied unchanged: they come
 from the native grid, not from the tiles.
 
 --fine FILE names a few small areas that keep the native detail (a GeoJSON file of polygons with
@@ -156,7 +158,8 @@ def copy_archive(src, dst, zmax, areas=None):
             pz["bytes"] += len(data)
             n += 1
         meta = dict(rd.metadata())
-        meta["copy"] = f"zoom {h['min_zoom']}-{min(zmax, h['max_zoom'])} of a set that goes to zoom {h['max_zoom']}"
+        if zmax < h["max_zoom"]:
+            meta["copy"] = f"zoom {h['min_zoom']}-{zmax} of a set that goes to zoom {h['max_zoom']}"
         header = {k: h[k] for k in HEADER_KEEP}
         header["max_zoom"] = min(zmax, h["max_zoom"])
         w.finalize(header, meta)
@@ -238,7 +241,8 @@ def main():
             print(f"  not in this copy's list of regions (no --link given): {', '.join(left_out)}")
         if not cat["regions"]:
             del cat["regions"]
-    cat["copy"] = {"kind": "preview", "of_version": cat["version"], "made": time.strftime("%Y-%m-%dT%H:%M:%S%z"), "sites": names}
+    full = cat["zoom"]["max"] >= native                              # --max-zoom at or above the top zoom: nothing is cut
+    cat["copy"] = {"kind": "full" if full else "preview", "of_version": cat["version"], "made": time.strftime("%Y-%m-%dT%H:%M:%S%z"), "sites": names}
     cat.pop("fine", None)
     if fine_count:
         cat["fine"] = {"zoom": native, "what": what, "areas": areas}
@@ -265,10 +269,12 @@ def main():
         bg_words = (f"\n`background/` holds a different product, {bg['name']} ({bg['long']}), as a coarse backdrop for the rest of the\n"
                     "globe. It is not Prithvi-OpenET-Tower output.\n" if bg and k == 1 else "")
         (folder / "README.md").write_text(
-            f"# Prithvi-OpenET-Tower browse tiles — public preview, part {k} of {len(names)}\n\n"
+            f"# Prithvi-OpenET-Tower browse tiles — {'public copy' if full else 'public preview'}, part {k} of {len(names)}\n\n"
             f"Numeric map tiles for the [Prithvi-OpenET-Tower data portal]({a.portal}): 30 m monthly\n"
-            f"evapotranspiration of {where}, {first} to {last}, reduced to zoom {cat['zoom']['min']}–{cat['zoom']['max']}\n"
-            f"so that it fits on GitHub Pages. The full set goes to zoom {native} (30 m).\n{fine_words}\n"
+            f"evapotranspiration of {where}, {first} to {last}, "
+            + (f"the full set: zoom {cat['zoom']['min']}–{native}, down to the native 30 m.\n\n" if full else
+               f"reduced to zoom {cat['zoom']['min']}–{cat['zoom']['max']}\n"
+               f"so that it fits on GitHub Pages. The full set goes to zoom {native} (30 m).\n{fine_words}\n") +
             "One PMTiles file per month (`monthly/`) and per climatology layer (`clim/`). A tile is an 8-bit\n"
             "grayscale PNG that holds values, not colours: `value = DN × dn_step`, `DN 255 = no data`.\n"
             "These tiles are for looking, not for analysis — they are resampled to Web Mercator, averaged and\n"

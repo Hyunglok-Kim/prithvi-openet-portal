@@ -226,7 +226,8 @@ with sync_playwright() as pw:
             if top not in ("clim", "monthly") and top not in [r["id"] for r in regions]:
                 continue                                        # the copy under test does not have that region
             rid = top if top in [r["id"] for r in regions] else regions[0]["id"]      # the region the tile is of
-            if z > zm["max"] and not (win and z <= fine_zoom and any(f["region"] == rid for f in fine)):
+            rmax = next(r["max"] for r in regions if r["id"] == rid)      # a region's copy may be its whole set while the others are reduced
+            if z > rmax and not (win and z <= fine_zoom and any(f["region"] == rid for f in fine)):
                 continue                                        # a reduced copy holds this level only inside its sample areas, where that region has any
             lid = "clim_annual" if "annual" in name else "et_" + name.split("_")[-1].split(".")[0]
             if win:                                             # a window inside a sample area: the full set's numbers
@@ -589,6 +590,23 @@ with sync_playwright() as pw:
               and page.locator("#chart svg path").count() >= 1 and f"of {R['built']} months" in page.inner_text("#rcSub")
               and len(rows) == R["built"] + 1 and R["name"] in head and (" cell)" in head if R["preview"] else "(30 m pixel)" in head),
               f"{R['name']}: a value of ours under the cursor ('{ro}'), and a click gives the series of that spot ({page.inner_text('#srSub')[:60]}…; CSV: {head[head.index('('):]})")
+        if preview and not R["preview"]:
+            # a region whose public copy is its whole set while the first region's is reduced (the Carmel River area since
+            # 2026-11-28): a second click goes on to the native 30 m, nothing there speaks of a finest level, and the
+            # page's sentences about the preview name it
+            page.mouse.click(*xy(lon, lat))
+            settle(2600)
+            v = view()
+            st2 = page.evaluate("""() => { const t = (q) => document.querySelector(q).textContent, s = document.querySelector('#steps span[data-step="2"]');
+                return {res: t('#roRes'), kicker: t('#srKicker'), step: s.classList.contains('on') ? s.textContent : '', badge: t('#previewBadge'),
+                        about: t('#abPreview'), hint: t('#hint'), tiles: t('#tilesZoom')}; }""")
+            the = R["the"].lower()
+            check(v["z"] > 11 and "(native)" in st2["res"] and st2["kicker"] == "30 m pixel" and st2["step"] == "Native 30 m" and not note()["shown"]
+                  and the in st2["badge"].lower() and f"{the} is shown at the native 30 m throughout" in st2["about"].lower()
+                  and f"in {the} it goes on to the native 30 m" in st2["hint"].lower() and f"in all of {the}" in st2["tiles"].lower(),
+                  f"{R['name']}: its public copy is the whole set, so a second click reaches the native 30 m (zoom {v['z']:.2f}, {st2['res']}); "
+                  f"the badge reads '{st2['badge']}'")
+            page.screenshot(path=str(shots / f"21_region_{R['id']}_native.png"))
         if R["preview"]:
             page.evaluate("window.__portal.map.jumpTo({zoom: 10.6})")
             settle(1500)
