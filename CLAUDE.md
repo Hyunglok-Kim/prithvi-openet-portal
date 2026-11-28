@@ -636,12 +636,14 @@ ET panel back. After an edit, check every card on the live page, not only your o
 
 **The hub card (since 2026-11-17).** On that page's hub each dataset card opens with a short
 silent loop and lists key facts and what the portal offers. Ours says "30 m, monthly",
-"April 2013 – August 2026, 160 monthly maps per region", "Korean Peninsula and France now; any
-other land area on request" and "Paper under review. Until it is accepted the maps are shown down
-to about 120 m, and at 30 m in 19 sample areas". **Those words repeat this portal's own
+"April 2013 – August 2026, 160 monthly maps per region (the Carmel River area: October 2024 –
+September 2025)", "Korean Peninsula, France and the Carmel River area now; any other land area on
+request" and "Paper under review. Until it is accepted the maps are shown down to about 120 m, and
+at 30 m in 19 sample areas and the whole Carmel River area". **Those words repeat this portal's own
 numbers: when the record, the regions, the sample areas or the paper's status change, change the
 card too** (France was added to it on 2026-11-21, the day its maps went up, and the count of
-sample areas went from eight to 19 the same day).
+sample areas went from eight to 19 the same day; the Carmel River area on 2026-11-27, and its 30 m
+on 2026-11-28, published 02:58:24 UTC, the embed then 34,421 characters).
 
 Its loop (`et-v3`, since France went up) opens on the globe with ET over all land, comes down on
 France, goes across to the Korean Peninsula and into the Pyeongchang sample area at 30 m, in mean
