@@ -272,15 +272,22 @@ python pipeline/make_background.py --src mod16_global_mean_monthly.npz --scale 1
     --long "MODIS/Terra Net Evapotranspiration, gap-filled (MOD16A2GF v061), NASA LP DAAC" \
     --period "2016–2024" --grid "0.1°" --cell-km 11 --doi 10.5067/MODIS/MOD16A2GF.061 \
     --hide /path/to/out/clim/KP_ET_clim_annual.pmtiles --hide /path/to/out/fr/clim/FR_ET_clim_annual.pmtiles \
-    --out /path/to/out --catalog
+    --hide /path/to/out/carmel/clim/CARMEL_ET_clim_annual.pmtiles --out /path/to/out --catalog
 ```
 
 - `--src` is a lon/lat grid (`.npz` with `et`, `lon`, `lat`, or a GeoTIFF); `--scale 12` turns a
   mean monthly field into mm per year. Needs numpy, Pillow, pmtiles; about 20 seconds; 10.6 MB.
-- The tiles follow the tile contract (zoom 0–6). Pixels off the land outline are dropped, and so
-  are pixels that our own maps touch plus a margin of two pixels (`--hide`, once for every region):
-  the background must never show through or beside the real thing. Across a land border that
-  leaves a strip of about 5 km with neither. **When a region is added, the background is re-made
+- The tiles follow the tile contract (zoom 0–6). Pixels off the land outline are dropped, and our
+  own maps cut the background out under them (`--hide`, once for every region): the background
+  must never show through or beside the real thing. Near the sea (within three pixels of the land
+  outline's sea) and inside a region's own box, a pixel goes as soon as our maps touch it, plus a
+  margin of two pixels, so that no fringe of background lies beside our coasts. On land a pixel
+  goes only when our maps cover it whole or enclose it (a lake, a cloud gap), so the background
+  reaches our maps across a land border and is covered by them, which are drawn over it. Until
+  2026-11-28 the near-sea rule held everywhere and left a strip of about 5 km with neither along
+  every land border, which round the Carmel River box was a frame that the lab head asked about
+  ("이렇게 왜 네모난 경계가 생겨?"); France's and the Korean Peninsula's land borders had it too.
+  **When a region is added, the background is re-made
   with its annual layer hidden as well**, and it goes out together with that region's maps: an
   old background under new maps shows through their gaps, a new background without the maps
   leaves the region blank.
@@ -790,7 +797,8 @@ Left:
   `fitBounds` gives nonsense; `view=region` waits until the Explore tab is shown.
 - **The land outline runs out to sea.** Natural Earth 1:50m is generalised, by up to a few km on
   the Korean east coast. Masking the background with it alone left a coloured fringe along our own
-  coast, hence the margin around our maps in `make_background.py`.
+  coast, hence the margin around our maps in `make_background.py` — near the sea only: on land the
+  same margin left an empty strip along every border (removed 2026-11-28).
 - **A 30 m area looked like 120 m.** Landing on an area at map zoom 11.7 puts 1.6 screen pixels
   on each native pixel. At that size the pixel grid cannot be seen and the thin features (field
   edges, roads, streams) are a pixel or two wide, so the area was hard to tell from the 120 m

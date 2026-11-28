@@ -23,9 +23,15 @@ How the tiles are made
      the grid cell it falls in has one, so values never spread into empty cells).
   2. Pixels off the land outline (--land) are dropped: a coarse cell on a coast would otherwise
      paint the sea.
-  3. Pixels that our own maps touch (--hide, one or more PMTiles files), and a margin of two pixels
-     around them, are dropped, so the background never shows through or beside the real thing.
-     Across a land border this leaves a strip of about 5 km without either.
+  3. Our own maps (--hide, one or more PMTiles files) cut the background out under them. Near the
+     sea (within three pixels of the land outline's sea) and inside the box of a region's grid, a
+     pixel goes as soon as our maps touch it, and so do two more pixels around it: the outline is a
+     generalised one, a coarse background cell reaches a few km out to sea, and it must not paint a
+     fringe beside our coasts. On land a pixel
+     goes only when our maps cover it whole, or when it lies in a hole they enclose (a lake, a cloud
+     gap): across a land border or the inland edge of a box the background then reaches our maps,
+     which are drawn over it. (Until 2026-11-28 the near-sea rule held everywhere, which left a strip
+     of about 5 km with neither along every land border: a frame around the Carmel River box.)
   4. Coarser levels are area means, kept where a quarter of the pixel has data (the tile
      pipeline's rule).
 
@@ -140,11 +146,59 @@ def land_mask(path, n):
     return np.asarray(img, np.uint8)
 
 
-def product_mask(paths, z, n, finer=2, margin=2):
-    """Pixels of zoom z that our own maps touch, grown by `margin` pixels. The archives are read
-    `finer` levels below z and a pixel counts as soon as any part of it has a value: a coast pixel
-    that is mostly sea still belongs to our maps, and must not be painted by the background."""
-    m = np.zeros((n, n), bool)
+def grow(m, r):
+    """m with every True pixel grown by r pixels (a square of 2r+1), on a window around the True part."""
+    if not r or not m.any():
+        return m.copy()
+    rows, cols = np.flatnonzero(m.any(axis=1)), np.flatnonzero(m.any(axis=0))
+    r0, r1 = max(0, rows[0] - r), min(m.shape[0], rows[-1] + 1 + r)
+    c0, c1 = max(0, cols[0] - r), min(m.shape[1], cols[-1] + 1 + r)
+    win = m[r0:r1, c0:c1]
+    pad = np.pad(win, r)
+    grown = np.zeros_like(win)
+    for dy in range(2 * r + 1):
+        for dx in range(2 * r + 1):
+            grown |= pad[dy:dy + win.shape[0], dx:dx + win.shape[1]]
+    out = m.copy()
+    out[r0:r1, c0:c1] = grown
+    return out
+
+
+def fill_holes(m):
+    """m plus every pixel not in m that cannot reach the edge of m's box through pixels not in m
+    (4-connected): the holes m encloses. numpy only (no scipy on the server)."""
+    if not m.any():
+        return m.copy()
+    rows, cols = np.flatnonzero(m.any(axis=1)), np.flatnonzero(m.any(axis=0))
+    r0, r1, c0, c1 = rows[0], rows[-1] + 1, cols[0], cols[-1] + 1
+    win = np.pad(m[r0:r1, c0:c1], 1)                       # a free ring all round: the outside starts there
+    free = ~win
+    out = np.zeros_like(win)
+    out[0, :] = out[-1, :] = True
+    out[:, 0] = out[:, -1] = True
+    out &= free
+    while True:
+        nxt = out.copy()
+        nxt[1:, :] |= out[:-1, :]
+        nxt[:-1, :] |= out[1:, :]
+        nxt[:, 1:] |= out[:, :-1]
+        nxt[:, :-1] |= out[:, 1:]
+        nxt &= free
+        if (nxt == out).all():
+            break
+        out = nxt
+    res = m.copy()
+    res[r0:r1, c0:c1] = ~out[1:-1, 1:-1]
+    return res
+
+
+def product_mask(paths, z, n, land, finer=2, margin=2, sea_px=3):
+    """Pixels of zoom z where the background must not show, for our maps in `paths` (see step 3 of the
+    module's notes). The archives are read `finer` levels below z: a pixel is touched when any part of
+    it has a value and covered when every part has one. One region (archive) at a time: its holes are
+    its own, and the margin near the sea stays inside the box of its grid (the archive's bounds), since
+    a fringe can only lie beside its own coast; outside the box the background is as anywhere else."""
+    hide = np.zeros((n, n), bool)
     for p in paths:
         with open(p, "rb") as f:
             rd = Reader(MmapSource(f))
@@ -154,34 +208,42 @@ def product_mask(paths, z, n, finer=2, margin=2):
             zr = min(z + finer, h["max_zoom"])
             k = 2 ** (zr - z)                                      # tiles of zr per tile of z, and px per px
 
-            def tx(lon_e7):
-                return int((lon_e7 / 1e7 + 180) / 360 * 2 ** zr)
+            def fx(lon_e7):                                        # 0..1 across the world, west to east
+                return (lon_e7 / 1e7 + 180) / 360
 
-            def ty(lat_e7):
+            def fy(lat_e7):                                        # 0..1 down the world, north to south
                 la = math.radians(max(-85.0511, min(85.0511, lat_e7 / 1e7)))
-                return int((1 - math.asinh(math.tan(la)) / math.pi) / 2 * 2 ** zr)
+                return (1 - math.asinh(math.tan(la)) / math.pi) / 2
 
-            hi, sub = 2 ** zr - 1, TILE // k
-            for y in range(max(0, ty(h["max_lat_e7"])), min(hi, ty(h["min_lat_e7"])) + 1):
-                for x in range(max(0, tx(h["min_lon_e7"])), min(hi, tx(h["max_lon_e7"])) + 1):
+            hi, sub = 2 ** zr - 1, TILE // k                       # tiles of zr, and pixels of z per tile of zr
+            ty0, ty1 = max(0, int(fy(h["max_lat_e7"]) * 2 ** zr)), min(hi, int(fy(h["min_lat_e7"]) * 2 ** zr))
+            tx0, tx1 = max(0, int(fx(h["min_lon_e7"]) * 2 ** zr)), min(hi, int(fx(h["max_lon_e7"]) * 2 ** zr))
+            # the window: those tiles, with room for the margin round them; and the box of the region's grid in it
+            pad = margin + sea_px + 1
+            r0, r1, c0, c1 = max(0, ty0 * sub - pad), min(n, (ty1 + 1) * sub + pad), max(0, tx0 * sub - pad), min(n, (tx1 + 1) * sub + pad)
+            by0, by1 = int(fy(h["max_lat_e7"]) * n), int(fy(h["min_lat_e7"]) * n)
+            bx0, bx1 = int(fx(h["min_lon_e7"]) * n), int(fx(h["max_lon_e7"]) * n)
+            touched = np.zeros((r1 - r0, c1 - c0), bool)
+            covered = np.zeros_like(touched)
+            for y in range(ty0, ty1 + 1):
+                for x in range(tx0, tx1 + 1):
                     data = rd.get(zr, x, y)
                     if data:
-                        a = np.asarray(Image.open(io.BytesIO(data))) != NODATA_DN
-                        m[y * sub:(y + 1) * sub, x * sub:(x + 1) * sub] |= a.reshape(sub, k, sub, k).any(axis=(1, 3))
-    if margin and m.any():
-        # The land outline is a generalised one: along our coasts it runs up to a few km out to sea, and a
-        # coarse background cell reaches as far. Grow the mask by a couple of pixels so no fringe is left.
-        rows, cols = np.flatnonzero(m.any(axis=1)), np.flatnonzero(m.any(axis=0))
-        r0, r1 = max(0, rows[0] - margin), min(n, rows[-1] + 1 + margin)
-        c0, c1 = max(0, cols[0] - margin), min(n, cols[-1] + 1 + margin)
-        win = m[r0:r1, c0:c1]
-        pad = np.pad(win, margin)
-        grown = np.zeros_like(win)
-        for dy in range(2 * margin + 1):
-            for dx in range(2 * margin + 1):
-                grown |= pad[dy:dy + win.shape[0], dx:dx + win.shape[1]]
-        m[r0:r1, c0:c1] = grown
-    return m
+                        a = (np.asarray(Image.open(io.BytesIO(data))) != NODATA_DN).reshape(sub, k, sub, k)
+                        ys, xs = slice(y * sub - r0, (y + 1) * sub - r0), slice(x * sub - c0, (x + 1) * sub - c0)
+                        touched[ys, xs] |= a.any(axis=(1, 3))
+                        covered[ys, xs] |= a.all(axis=(1, 3))
+        if not touched.any():
+            continue
+        # near the sea, inside the box: as soon as our maps touch a pixel, and a margin round it
+        near_sea = grow(land[r0:r1, c0:c1] == 0, sea_px)
+        in_box = np.zeros_like(touched)
+        in_box[by0 - r0:by1 + 1 - r0, bx0 - c0:bx1 + 1 - c0] = True
+        win = grow(touched, margin) & near_sea & in_box
+        # on land: what our maps cover whole, and the holes they enclose
+        win |= fill_holes(covered)
+        hide[r0:r1, c0:c1] |= win
+    return hide
 
 
 def block_sum(a, dtype):
@@ -240,7 +302,9 @@ def main():
     lats = np.degrees(np.arctan(np.sinh(np.pi * (1 - 2 * (np.arange(n) + 0.5) / n))))
     land = land_mask(a.land, n)
     log(f"  land outline drawn at zoom {a.zmax} ({n} px across)")
-    hide = product_mask(a.hide, a.zmax, n) if a.hide else None
+    hide = product_mask(a.hide, a.zmax, n, land) if a.hide else None
+    if hide is not None:
+        log(f"  cut out under our maps: {int(hide.sum())} px ({time.time() - t0:.0f} s)")
 
     q = np.full((n, n), NODATA_DN, np.uint8)
     clipped = 0
